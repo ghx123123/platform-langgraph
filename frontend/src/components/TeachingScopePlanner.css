@@ -1,0 +1,38 @@
+.scope-planner { display: grid; gap: 8px; padding: 11px 12px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; }
+.scope-confirmation { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 7px 6px 9px; border: 1px solid #d3dfeb; background: #fff; }
+.scope-confirmation > span { min-width: 0; display: grid; gap: 2px; }
+.scope-confirmation strong { color: #34495f; font-size: 11px; }
+.scope-confirmation small { overflow: hidden; color: #708197; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.scope-confirmation button { min-height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid #9db9d7; color: #245b94; background: #f2f7fc; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.scope-confirmation.confirmed { border-color: #9fd2bc; background: #f0faf5; }
+.scope-confirmation.confirmed button { border-color: #8cc8ae; color: #147a50; background: #fff; }
+.scope-heading { display: grid; gap: 3px; }
+.scope-heading > div { display: flex; align-items: center; gap: 6px; color: var(--role-teacher-deep); }
+.scope-heading svg { color: var(--accent); }
+.scope-heading h3 { margin: 0; font-size: 11px; }
+.scope-heading span { min-width: 20px; padding: 2px 5px; border-radius: 10px; color: var(--role-teacher-deep); background: var(--role-teacher-soft); font-size: 11px; text-align: center; }
+.scope-heading p { margin: 0; color: #64748b; font-size: 11px; line-height: 1.5; }
+.scope-quick-actions { display: flex; gap: 5px; }
+.scope-quick-actions button { min-height: 26px; padding: 3px 8px; border: 1px solid #e2e8f0; border-radius: 4px; color: #475569; background: #fff; font-size: 11px; }
+.scope-quick-actions button:hover { color: var(--role-teacher); border-color: var(--role-teacher); background: var(--role-teacher-soft); }
+.scope-points { display: grid; gap: 4px; max-height: 144px; overflow: auto; padding-right: 2px; }
+.scope-points label { display: grid; grid-template-columns: 14px 14px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 29px; padding: 5px 7px; border: 1px solid #e2e8f0; border-radius: 4px; color: #475569; background: #fff; cursor: pointer; font-size: 11px; }
+.scope-points label.selected { border-color: var(--role-teacher-border); color: var(--role-teacher-deep); background: var(--role-teacher-soft); }
+.scope-points input { width: 12px; height: 12px; margin: 0; accent-color: var(--accent); }
+.scope-points svg { color: #94a3b8; }
+.scope-points label.selected svg { color: var(--accent); }
+.scope-points span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.scope-points em { padding: 1px 4px; border-radius: 3px; color: var(--role-supervisor-deep); background: var(--role-supervisor-soft); font-size: 11px; font-style: normal; }
+.scope-time { display: grid; gap: 4px; padding-top: 2px; }
+.scope-time > div:first-child { display: flex; align-items: center; justify-content: space-between; color: #475569; font-size: 11px; }
+.scope-time label { display: inline-flex; align-items: center; gap: 4px; }
+.scope-time strong { color: var(--accent-dark); font-size: 11px; }
+.scope-time input { width: 100%; margin: 0; accent-color: var(--accent); }
+.scope-ticks { display: flex; justify-content: space-between; color: #64748b; font-size: 11px; }
+.scope-depth { display: grid; gap: 5px; }
+.scope-depth > span { display: inline-flex; align-items: center; gap: 4px; color: #475569; font-size: 11px; }
+.scope-depth > div { display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; border: 1px solid #e2e8f0; border-radius: 5px; }
+.scope-depth button { min-height: 38px; display: grid; gap: 1px; padding: 4px 3px; border: 0; border-right: 1px solid #e2e8f0; color: #475569; background: #fff; font-size: 11px; }
+.scope-depth button:last-child { border-right: 0; }
+.scope-depth button.active { color: #fff; background: #1e293b; }
+.scope-depth small { font-size: 11px; font-weight: 400; }

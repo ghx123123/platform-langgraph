@@ -1,0 +1,1 @@
+"""Teaching document ingestion."""

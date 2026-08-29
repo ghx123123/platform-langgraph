@@ -1,0 +1,218 @@
+/* SessionRunCard.css - 教学会话卡片样式（session- 前缀，避免与全局样式冲突） */
+
+.session-card {
+  width: 100%;
+  max-width: 302px;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #0f172a;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s ease, background .12s ease, box-shadow .12s ease;
+}
+
+.session-card:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.session-card.selected {
+  border-color: var(--role-teacher);
+  background: var(--role-teacher-soft);
+  box-shadow: inset 3px 0 0 var(--role-teacher);
+}
+
+.session-card.is-failed {
+  border-color: #fecaca;
+}
+
+/* 左侧状态圆点 */
+.session-card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / .85);
+}
+
+.session-card.session-status-running .session-card-dot,
+.session-card.session-status-queued .session-card-dot {
+  background: var(--role-supervisor);
+  box-shadow: 0 0 0 3px rgb(244 122 22 / .14);
+}
+
+.session-card.session-status-running .session-card-dot {
+  animation: session-card-pulse 1.6s ease-out infinite;
+}
+
+.session-card.session-status-completed .session-card-dot {
+  background: var(--role-student);
+  box-shadow: 0 0 0 3px rgb(24 185 121 / .14);
+}
+
+.session-card.session-status-paused .session-card-dot {
+  background: var(--role-teacher-deep);
+  box-shadow: 0 0 0 3px rgb(47 123 234 / .14);
+}
+
+.session-card.session-status-failed .session-card-dot {
+  background: #991b1b;
+}
+
+.session-card.session-status-cancelled .session-card-dot {
+  background: #94a3b8;
+}
+
+@keyframes session-card-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(244 122 22 / .32); }
+  70% { box-shadow: 0 0 0 5px rgb(244 122 22 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(244 122 22 / 0); }
+}
+
+/* 标题与信息 */
+.session-card-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.session-card-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.4;
+}
+
+.session-card-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.session-card-meta svg {
+  flex: none;
+  color: #94a3b8;
+}
+
+.session-card-time {
+  flex: none;
+}
+
+.session-card-status-text {
+  flex: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 右侧信息区 */
+.session-card-side {
+  min-width: 0;
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.session-card-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #166534;
+  background: #dcfce7;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.session-card-round {
+  color: #64748b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.session-card-attention {
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #1e40af;
+  background: #dbeafe;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* 删除：垃圾桶 -> 两步确认 */
+.session-card-delete {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #94a3b8;
+  background: transparent;
+  opacity: 0;
+  transition: color .12s ease, background .12s ease, border-color .12s ease, opacity .12s ease;
+}
+
+.session-card:hover .session-card-delete,
+.session-card-delete:focus-visible {
+  opacity: 1;
+}
+
+.session-card-delete:hover {
+  color: #991b1b;
+  border-color: #fecaca;
+  background: #fee2e2;
+}
+
+.session-card-confirm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.session-card-confirm button {
+  padding: 3px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  color: #334155;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.session-card-confirm button:hover {
+  background: #f8fafc;
+}
+
+.session-card-confirm .session-card-confirm-danger {
+  color: #fff;
+  border-color: #991b1b;
+  background: #991b1b;
+}
+
+.session-card-confirm .session-card-confirm-danger:hover {
+  background: #991b1b;
+}
+
+@media (max-width: 680px) {
+  .session-card {
+    max-width: none;
+  }
+}

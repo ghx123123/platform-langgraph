@@ -1,0 +1,46 @@
+/* TeachingProgress.css - 教学进度胶囊样式（progress- 前缀，避免与全局样式冲突） */
+
+.progress-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.progress-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #475569;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.progress-chip svg {
+  flex: none;
+  color: var(--role-teacher);
+}
+
+.progress-chip.is-paused {
+  color: var(--role-teacher-deep);
+  border-color: var(--role-teacher-border);
+  background: var(--role-teacher-soft);
+}
+
+.progress-chip.is-paused svg {
+  color: var(--role-teacher-deep);
+}
+
+@media (max-width: 680px) {
+  .progress-chips {
+    flex-wrap: wrap;
+  }
+}
+.progress-chip.is-estimate { color: var(--role-teacher-deep); border-color: var(--role-teacher-border); background: var(--role-teacher-soft); }
+.progress-chip.is-estimate svg { color: var(--role-teacher-deep); }

@@ -1,0 +1,64 @@
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+key.txt
+*.key
+*.pem
+*.pfx
+.claude/settings.local.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Frontend
+node_modules/
+dist/
+build/
+coverage/
+
+# .NET helper build products
+**/bin/
+**/obj/
+
+# Runtime data and user-imported course materials
+backend/data/
+backend/reports/
+.runtime/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+
+# Generated visual evidence and local tooling state
+frontend/screenshots/
+artifacts/
+frontend/frontend/
+.trae/
+
+# Historical full project copies and local backup artifacts
+项目备份_可启动_*/
+.backups/
+*.bundle
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+
+# Session screenshots
+shot-*.png
+*.output
+
+# Local dsh session data
+.dsh-sessions/

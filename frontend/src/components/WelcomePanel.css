@@ -1,0 +1,212 @@
+/* WelcomePanel.css - 新用户引导首屏组件样式 */
+.welcome-panel,
+.welcome-card,
+.welcome-steps,
+.welcome-step,
+.welcome-btn {
+  box-sizing: border-box;
+}
+
+.welcome-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 26px 18px;
+}
+
+.welcome-card {
+  width: 100%;
+  max-width: 660px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 34px 38px 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 14px 36px rgb(47 123 234 / 10%);
+  text-align: center;
+}
+
+.welcome-brand {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.welcome-logo {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--role-teacher), var(--role-teacher-deep));
+  box-shadow: 0 8px 18px rgb(47 123 234 / 28%);
+}
+
+.welcome-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 21px;
+  font-weight: 720;
+  letter-spacing: 0.01em;
+}
+
+.welcome-subtitle {
+  max-width: 48ch;
+  margin: 0;
+  color: #64748b;
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+.welcome-agents {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.welcome-agents span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: var(--role-teacher-deep);
+  background: var(--role-teacher-soft);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.welcome-steps {
+  width: 100%;
+  margin: 26px 0 24px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.welcome-step {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 15px 14px;
+  border: 1px solid #f8fafc;
+  border-radius: 10px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.welcome-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.welcome-step-badge {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--role-teacher);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.welcome-step-icon {
+  color: var(--role-teacher);
+}
+
+.welcome-step-title {
+  color: #0f172a;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.welcome-step-desc {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 10.5px;
+  line-height: 1.65;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.welcome-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 650;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.welcome-btn-primary {
+  border: 1px solid var(--role-teacher);
+  color: #fff;
+  background: var(--role-teacher);
+  box-shadow: 0 6px 14px rgb(47 123 234 / 24%);
+}
+
+.welcome-btn-primary:hover {
+  border-color: var(--role-teacher-deep);
+  background: var(--role-teacher-deep);
+}
+
+.welcome-btn-secondary {
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  background: #fff;
+}
+
+.welcome-btn-secondary:hover {
+  border-color: var(--role-teacher);
+  color: var(--role-teacher);
+  background: var(--role-teacher-soft);
+}
+
+.welcome-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 18px 0 0;
+  color: #64748b;
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+@media (max-width: 760px) {
+  .welcome-panel {
+    padding: 20px 12px;
+  }
+  .welcome-card {
+    padding: 28px 20px 20px;
+  }
+  .welcome-steps {
+    grid-template-columns: 1fr;
+  }
+  .welcome-actions {
+    flex-direction: column;
+  }
+  .welcome-btn {
+    width: 100%;
+  }
+}

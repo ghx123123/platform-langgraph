@@ -1,0 +1,174 @@
+/* KnowledgePointEditor.css - 候选知识点编辑器（嵌入左侧窄面板） */
+.kp-editor {
+  display: grid;
+  gap: 9px;
+  padding: 11px 12px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.kp-header { display: grid; gap: 3px; }
+
+.kp-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 680;
+  letter-spacing: 0;
+}
+.kp-title > svg { flex: none; color: var(--role-teacher); }
+.kp-title h3 { margin: 0; font-size: inherit; font-weight: inherit; }
+
+.kp-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--role-teacher-soft);
+  color: var(--role-teacher-deep);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kp-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.kp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 2px 4px 2px 3px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+}
+.kp-chip.is-key {
+  border-color: var(--role-supervisor-border);
+  background: var(--role-supervisor-soft);
+  color: var(--role-supervisor-deep);
+}
+.kp-chip.is-editing {
+  border-color: var(--role-teacher);
+  background: var(--role-teacher-soft);
+  box-shadow: 0 0 0 1px rgb(47 123 234 / 15%);
+}
+
+.kp-star,
+.kp-action {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #94a3b8;
+  background: transparent;
+}
+.kp-star:hover,
+.kp-action:hover { color: #334155; background: #f8fafc; }
+
+.kp-chip.is-key .kp-star { color: var(--role-supervisor); }
+.kp-chip.is-key .kp-star:hover { background: var(--role-supervisor-soft); }
+
+.kp-action:hover { color: var(--role-teacher); }
+.kp-remove:hover { color: #991b1b; background: #fee2e2; }
+
+.kp-chip-title {
+  min-width: 0;
+  max-width: min(168px, 58vw);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.kp-edit-input {
+  width: 132px;
+  min-width: 0;
+  min-height: 20px;
+  padding: 2px 6px;
+  border: 1px solid var(--role-teacher);
+  border-radius: 4px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.kp-edit-input::placeholder { color: #94a3b8; }
+
+.kp-empty {
+  padding: 8px 10px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.kp-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.kp-add-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.kp-add-input::placeholder { color: #94a3b8; }
+
+.kp-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--role-teacher);
+  border-radius: 5px;
+  color: #fff;
+  background: var(--role-teacher);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.kp-add-btn:hover { background: var(--role-teacher-deep); }
+
+@media (max-width: 360px) {
+  .kp-add { grid-template-columns: 1fr; }
+  .kp-add-btn { width: 100%; }
+}
