@@ -2,6 +2,78 @@
 
 基于 FastAPI、LangChain 和 LangGraph 的课程教学设计工作区。项目从原 `multi_agent_platform` 复制演进，默认入口保留原项目的教学核心语义：教师读取课程文档、剖析重难点、设计教学环节并讲授，分层学生提问，教师答疑，教学督导点评，再根据反馈进入下一轮。
 
+> **演进版新增**：内嵌 **dsh (DeepSeek Harness)** 作为 LLM 层，替代/增强原 LangGraph 纯 LLM 调用；新增「教材研读阅读图谱」（选词对话 → dsh 作答 → 保存图谱节点 → 导入知识大纲）与「模型服务设置面板」（厂商预设 + 官网 /models 真实探测）。
+
+## 架构图
+
+```mermaid
+flowchart TB
+    subgraph UI["前端工作台 (React + Vite)"]
+        A[数据中台<br/>DataHubWorkspace]
+        B[资料单元<br/>MaterialUnitWorkspace<br/>三栏: 单元列表 / 范围规划 / 知识大纲]
+        C[课程设计<br/>CompositionWorkspace]
+        D[成果中心<br/>ExportWorkspace]
+        E[教材研读图谱<br/>GraphView + FilePreview]
+        F[模型设置面板<br/>ModelSettingsPanel]
+    end
+
+    subgraph API["后端 FastAPI (backend/app.py)"]
+        R1[course_archives<br/>课程资料库]
+        R2[documents<br/>文档解析]
+        R3[data_hub<br/>数据中台]
+        R4[course_designs<br/>课程设计]
+        R5[workflows<br/>教学会话/事件]
+        R6[model_settings<br/>模型设置]
+        R7[material_units<br/>资料单元+大纲]
+        R8[graph_router<br/>教材研读图谱]
+    end
+
+    subgraph LLM["dsh LLM 层 (DeepSeek Harness)"]
+        ENG[DshAgentEngine<br/>stdio 桥管理]
+        BR[scripts/dsh_agent_bridge.py<br/>按请求切 provider/model<br/>+ 429/401 错误中文化]
+        SDK[DeepSeekHarness<br/>agent-core + llm-pi-ai<br/>pi-ai 模型路由]
+        PI[pi-ai catalog<br/>minimax-cn / deepseek]
+    end
+
+    subgraph EXT["外部模型 API"]
+        M3[MiniMax<br/>MiniMax-M3 / M2.7]
+        DS[DeepSeek<br/>deepseek-v4-flash / v4-pro / vision-exp]
+    end
+
+    subgraph STORE["数据存储"]
+        DB[(platform.db<br/>SQLite)]
+        ARCH[(backend/data/material_units<br/>单元 JSON + graph_notes/*.md)]
+    end
+
+    A --> R3
+    B --> R7
+    B --> R8
+    C --> R4
+    C --> R5
+    D --> R4
+    E --> R8
+    F --> R6
+    E --> ENG
+
+    R1 --> R7
+    R2 --> R7
+    R6 --> ENG
+    R7 --> ENG
+    R8 --> ENG
+
+    ENG --> BR
+    BR --> SDK
+    SDK --> PI
+    PI --> M3
+    PI --> DS
+
+    R7 --> DB
+    R7 --> ARCH
+    R8 --> ARCH
+```
+
+**两层 LLM 语义**：原 LangGraph 纯 LLM 调用，现在统一走 `DshAgentEngine`（stdio 桥 → dsh SDK → pi-ai → 外部模型）。教材研读图谱与资料单元的大纲生成/优化都命中这一层；`@_serialized` 锁保证并发读写单元 JSON 时不丢更新。
+
 ## 教学流程
 
 ```text
@@ -133,6 +205,21 @@ npm --prefix frontend run dev
 | GET | `/api/settings/model` | 获取脱敏后的模型设置 |
 | PUT | `/api/settings/model` | 保存并热切换模型 |
 | POST | `/api/settings/model/test` | 测试候选模型连接 |
+
+## 启动运行
+
+```bash
+# 1) 后端 (venv 内, 从项目根目录)
+python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
+
+# 2) 前端 (另开终端)
+npm --prefix frontend run dev          # 访问 http://localhost:5173
+# 生产构建: npm --prefix frontend run build
+```
+
+**启用 dsh LLM 层**：`ModelSettingsPanel`（顶栏「dsh · <model>」→ 连接与参数设置）选择「dsh 智能体」→ 模型提供方 `DeepSeek/MiniMax`（自动填 URL）→ 填 API Key → 连接并获取模型 → 保存。dsh 引擎按请求切换 provider/model，无需重启后端；环境变量 `DSH_ENGINE_PYTHON` 指向 dev-venv 的 python（默认 `dev-venv-dshsdk/Scripts/python.exe`）。
+
+**模型报错提示**：429 →「模型额度不足（429 限流）…请切换模型或充值」；401 →「API Key 无效」——均由 `scripts/dsh_agent_bridge.py` 的 `translate_error` 中文化。
 
 ## 验证
 
