@@ -219,6 +219,10 @@ export const materialUnitApi = {
     request<import('../types/workflow').MaterialUnitKnowledgeOutline>(`/material-units/${unitId}/knowledge-outlines/${outlineId}`, { method: 'PUT', body: JSON.stringify(input) }),
   deleteKnowledgeOutline: (unitId: string, outlineId: string, version: number, allHistory = false) =>
     request<void>(`/material-units/${unitId}/knowledge-outlines/${outlineId}?version=${version}&all_history=${allHistory}`, { method: 'DELETE' }),
+  generateTeacherNote: (unitId: string, outlineId: string, nodeId: string, input: { version: number; instruction: string }) =>
+    request<{ ok: boolean; content: string }>(`/material-units/${unitId}/knowledge-outlines/${outlineId}/nodes/${nodeId}/teacher-note`, { method: 'POST', body: JSON.stringify(input) }),
+  saveTeacherNote: (unitId: string, outlineId: string, nodeId: string, input: { version: number; content: string }) =>
+    request<{ ok: boolean }>(`/material-units/${unitId}/knowledge-outlines/${outlineId}/nodes/${nodeId}/teacher-note`, { method: 'PUT', body: JSON.stringify(input) }),
   createRefineTask: (unitId: string, outlineId: string, input: { material_ids: string[]; teacher_instruction: string; base_version?: number; use_model?: boolean }) =>
     request<import('../types/workflow').MaterialUnitRefineTask>(`/material-units/${unitId}/knowledge-outlines/${outlineId}/refine-tasks`, { method: 'POST', body: JSON.stringify(input) }),
   listRefineTasks: (unitId: string, outlineId: string) =>

@@ -360,3 +360,82 @@ async def graph_node_unlink_outline(unit_id: str, node_id: str, payload: dict) -
     record["updated_at"] = utc_now()
     await _save_record(record)
     return {"ok": True, "outline_id": outline_id, "node_id": target_node_id, "unlinked": True}
+
+
+# ============ 教学补充: 教师提示词生成 + 就地更新当前大纲版本 ============
+
+def _find_outline_node(record: dict, outline_id: str, version: int | None, node_id: str) -> tuple[dict, dict]:
+    """定位指定 outline_id(+可选 version) 下的节点, 返回 (outline, node)."""
+    from backend.material_units.router import _outline_version
+    outline = _outline_version(record, outline_id, version)
+    node = next((n for n in (outline.get("nodes") or []) if str(n.get("id")) == node_id), None)
+    if node is None:
+        raise HTTPException(status_code=404, detail="大纲内未找到目标知识点节点")
+    return outline, node
+
+
+@router.post("/{unit_id}/knowledge-outlines/{outline_id}/nodes/{node_id}/teacher-note")
+async def generate_teacher_note(unit_id: str, outline_id: str, node_id: str, payload: dict, request: Request) -> dict:
+    """教师输入提示词 → dsh 读该节点 + 整个大纲上下文 → 生成教学补充候选(只返回, 不回写).
+    沿用四段格式: ## 主题 / ## 要点 / ## 教学建议 / ## 引用原文."""
+    instruction = str(payload.get("instruction") or "").strip()
+    version = payload.get("version")
+    if not instruction:
+        raise HTTPException(status_code=422, detail="请填写补充要求提示词")
+    record = await _load_record(unit_id)
+    outline, node = _find_outline_node(record, outline_id, version, node_id)
+    # 该节点自身内容 + 整个大纲结构(标题层级)作上下文
+    siblings = outline.get("nodes") or []
+    outline_structure = "\n".join(
+        f"{'  ' * (int(n.get('level', 1)) - 1)}- {n.get('title', '')}" for n in siblings
+    )
+    system_prompt = (
+        "你是教学补充撰写助手。教师会根据当前一篇知识大纲，要求为某个知识点补充教学内容。"
+        "只输出 markdown 正文，不要解释。结构固定为四段："
+        "## 主题\n## 要点(≤5条, 每条一句)\n## 教学建议\n## 引用原文(教材原文或有则写, 无则写'（教材未直接涉及，以下为通用讲解）')。"
+    )
+    user_prompt = (
+        f"当前大纲结构：\n{outline_structure}\n\n"
+        f"需要补充的知识点：{node.get('title', '')}\n该知识点现有说明：{node.get('description') or ''}\n"
+        f"教师要求：{instruction}\n\n"
+        f"请为该知识点撰写教学补充。"
+    )
+    try:
+        answer = await _engine(request).generate(system_prompt, user_prompt)
+    except Exception as exc:
+        from backend.workflows.dsh_engine import DshEngineError
+        if isinstance(exc, DshEngineError):
+            raise HTTPException(status_code=502, detail=f"AI 生成失败: {str(exc)[:200]}") from exc
+        raise
+    return {"ok": True, "content": answer.strip()}
+
+
+@router.put("/{unit_id}/knowledge-outlines/{outline_id}/nodes/{node_id}/teacher-note")
+async def save_teacher_note(unit_id: str, outline_id: str, node_id: str, payload: dict) -> dict:
+    """就地更新当前大纲版本的该节点 teacher_note(不新建版本)."""
+    content = str(payload.get("content") or "").strip()
+    version = payload.get("version")
+    if not content:
+        raise HTTPException(status_code=422, detail="教学补充内容为空")
+    async with _mutation_lock:
+        record = await _load_record(unit_id)
+        from backend.material_units.router import _outline_version
+        outline = _outline_version(record, outline_id, version)
+        node = next((n for n in (outline.get("nodes") or []) if str(n.get("id")) == node_id), None)
+        if node is None:
+            raise HTTPException(status_code=404, detail="大纲内未找到目标知识点节点")
+        node["teacher_note"] = content
+        # 就地改当前版本(不新建版本): 更新内存里对应 outline 的节点并保存整个 record
+        for o in record.get("knowledge_outlines") or []:
+            if o.get("id") == outline_id and (version is None or int(o.get("version") or 0) == int(version)):
+                for n in o.get("nodes") or []:
+                    if str(n.get("id")) == node_id:
+                        n["teacher_note"] = content
+                o["updated_at"] = utc_now()
+                break
+        record["updated_at"] = utc_now()
+        await _save_record(record)
+    # 返回更新后的完整大纲(就地更新, 版本号不变)
+    from backend.material_units.router import _outline_version
+    updated = _outline_version(record, outline_id, version)
+    return {"ok": True, "outline_id": outline_id, "node_id": node_id, "content": content, "outline": updated}

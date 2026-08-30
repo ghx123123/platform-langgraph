@@ -244,3 +244,20 @@
 .node-editor-row { grid-template-columns: 64px minmax(0,1fr) auto auto; }
 .node-editor-row .node-teacher-editor { grid-column: 1 / -1; min-height: 44px; resize: vertical; padding: 6px 8px; border: 1px solid #ccd8e5; border-radius: 5px; color: #34475d; background: #fafbfd; font-size: 12px; line-height: 1.6; }
 .node-editor-row .node-teacher-editor:focus { outline: 0; border-color: #93baf8; box-shadow: 0 0 0 2.5px rgba(37, 99, 235, .1); }
+
+/* 教学补充对话框 */
+.teacher-note-dialog { width: min(720px, calc(100vw - 40px)); }
+.teacher-note-body { padding: 14px 15px; display: grid; gap: 10px; }
+.teacher-note-body .field-group { display: grid; gap: 5px; }
+.teacher-note-body .field-label { color: #40546d; font-size: 12px; font-weight: 700; }
+.teacher-note-body textarea { min-height: 60px; padding: 7px 8px; border: 1px solid #ccd8e5; border-radius: 5px; color: #34475d; background: #fff; font-size: 12.5px; line-height: 1.6; resize: vertical; }
+.teacher-note-body textarea:focus { outline: 0; border-color: #93baf8; box-shadow: 0 0 0 2.5px rgba(37,99,235,.1); }
+.teacher-note-actions { display: flex; justify-content: flex-end; }
+.teacher-note-preview-head { margin-top: 4px; color: #6b7e93; font-size: 11.5px; font-weight: 700; }
+.teacher-note-preview { min-height: 180px !important; background: #f8fbff !important; }
+/* 大纲树: 教学补充添加/编辑按钮 */
+.teacher-note-add-btn { margin-top: 5px; padding: 2px 7px; display: inline-flex; align-items: center; gap: 4px; border: 1px dashed #c9a227; border-radius: 5px; color: #8a6d3b; background: #fdf9ef; font-size: 11px; cursor: pointer; }
+.teacher-note-add-btn:hover { background: #f8eed8; }
+.teacher-note-edit-btn { margin-left: 6px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 3px; border: 1px solid #cfe0f5; border-radius: 4px; color: #1857b7; background: #eef6ff; font-size: 10px; cursor: pointer; }
+.teacher-note-edit-btn:hover { background: #dcecff; }
+.node-teacher-note summary { display: flex; align-items: center; }
