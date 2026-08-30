@@ -182,22 +182,6 @@ async def syllabus_matches(unit_id: str, payload: SyllabusMatchRequest, request:
         )
     except KeyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    # 合并教师自定义/补充要求: 纯文本, id=custom-<hash>, 不进 evidence 不生成独立节点,
-    # 仅作为"选中依据"出现在 matches 里(教师可选它, 生成大纲时进 requirements 但不产节点)。
-    for custom in payload.custom_requirements:
-        item = custom.model_dump()
-        result["matches"].append({
-            "id": custom.stable_id(),
-            "category": item["category"],
-            "category_label": SYLLABUS_CATEGORY_LABELS.get(item["category"], item["category"]),
-            "title": item["title"],
-            "content": item["content"],
-            "score": 1.0,
-            "reason": "教师自定义/补充要求",
-            "recommended": True,
-            "evidence": {"id": custom.stable_id(), "source_type": "teacher", "material_id": "", "quote": item["title"], "label": "教师自定义"},
-            "custom": True,
-        })
     return SyllabusMatchResponse.model_validate(result)
 
 
@@ -401,17 +385,6 @@ async def create_outline(unit_id: str, payload: KnowledgeOutlineCreate) -> Knowl
         record, _, _, options = await _scope_context(unit_id)
         try:
             matching = match_syllabus_requirements(options, payload.teaching_item_ids, limit_per_category=8)
-            # 合并教师自定义要求(仅作选中依据, 进 requirements, 不生成节点)
-            for custom in payload.custom_requirements:
-                custom_dict = custom.model_dump()
-                matching["matches"].append({
-                    "id": custom.stable_id(), "category": custom_dict["category"],
-                    "category_label": SYLLABUS_CATEGORY_LABELS.get(custom_dict["category"], custom_dict["category"]),
-                    "title": custom_dict["title"], "content": custom_dict["content"],
-                    "score": 1.0, "reason": "教师自定义/补充要求", "recommended": True,
-                    "evidence": {"id": custom.stable_id(), "source_type": "teacher", "material_id": "", "quote": custom_dict["title"], "label": "教师自定义"},
-                    "custom": True,
-                })
             outline = create_knowledge_outline(unit_id, options, payload.model_dump(), matching["matches"])
             validated = KnowledgeOutline.model_validate(outline).model_dump()
         except (KeyError, ValueError) as exc:

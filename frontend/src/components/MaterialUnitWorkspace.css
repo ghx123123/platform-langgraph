@@ -237,9 +237,5 @@
 .outline-history-footer .secondary-button { color: #a33f37; border-color: #e6c2be; }
 
 /* 大纲要求: 教师自定义补充 */
-.requirement-group.is-custom h4 { color: #8a6d3b; }
-.requirement-group.is-custom label.selected { border-color: #d5c6a8; background: #fdf7ec; }
-.requirement-group.is-custom strong { color: #7a5c16; }
-.custom-req-add { margin-top: 8px; display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
-.custom-req-add button { min-height: 28px; padding: 0 10px; display: inline-flex; align-items: center; gap: 4px; border: 1px dashed #c9a227; border-radius: 5px; color: #8a6d3b; background: #fdf9ef; font-size: 11.5px; cursor: pointer; }
-.custom-req-add button:hover { background: #f8eed8; }
+
+
