@@ -30,6 +30,16 @@ console.log('openNodes:', openNodes)
 
 // 查看某个节点是否显示"已导入到知识大纲"
 const importsInfo = await page.evaluate(() => {
+  // 列出每个图谱节点的导入位置卡片(富文本节点卡片)
+  const cards = [...document.querySelectorAll('b')].filter(b => b.textContent?.includes('主角叫啥') || b.textContent?.includes('举一个例子'))
+  const cardText = cards.map(c => c.parentElement?.parentElement?.innerText?.slice(0,120)).join('
+---
+')
+  return { nodeCards: cards.length, cardSample: cardText.slice(0, 300) }
+})
+console.log('cardSample:', JSON.stringify(importsInfo))
+await page.screenshot({ path: 'shot-graph-multi.png' })
+const importsInfo2 = await page.evaluate(() => {
   const t = document.body.innerText
   const hasMarked = t.includes('已导入到知识大纲')
   const unlinkBtns = [...document.querySelectorAll('button[title*="取消导入"]')].length

@@ -1,0 +1,17 @@
+import { createRequire } from 'node:module'
+const require = createRequire('D:/paper/dsh/platform-langgraph/frontend/')
+const { chromium } = require('playwright-core')
+const EXE = 'C:/Users/84652/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe'
+const browser = await chromium.launch({ headless: true, executablePath: EXE, args: ['--no-sandbox', '--disable-gpu'] })
+const page = await browser.newPage({ viewport: { width: 1700, height: 1050 } })
+await page.goto('http://127.0.0.1:5173/materials', { waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(2200)
+await page.evaluate(() => [...document.querySelectorAll('button')].find((x) => x.innerText?.includes('python资料单元'))?.click())
+await page.waitForTimeout(2200)
+await page.evaluate(() => [...document.querySelectorAll('.unit-sources > button')].find((x) => x.innerText?.includes('Python程序设计基础与应用_第01章'))?.click())
+await page.waitForTimeout(1800)
+await page.evaluate(() => [...document.querySelectorAll('summary')].find((x) => x.innerText?.includes('已保存图谱节点'))?.click())
+await page.waitForTimeout(800)
+await page.screenshot({ path: 'shot-graph-multi.png' })
+await browser.close()
+console.log('done')
