@@ -241,6 +241,8 @@ export const materialUnitApi = {
     request<{ ok: boolean; title: string; duplicate?: boolean }>(`/material-units/${unitId}/graph-nodes/${nodeId}/insert-outline`, { method: 'POST', body: JSON.stringify(input) }),
   graphNodeUnlinkOutline: (unitId: string, nodeId: string, input: { outline_id: string; node_id: string }) =>
     request<{ ok: boolean }>(`/material-units/${unitId}/graph-nodes/${nodeId}/unlink-outline`, { method: 'POST', body: JSON.stringify(input) }),
+  graphNodeOutlineImports: (unitId: string, nodeId: string) =>
+    request<{ items: Array<{ outline_id: string; outline_version: number; outline_title: string; node_id: string; node_title: string; quote: string }> }>(`/material-units/${unitId}/graph-nodes/${nodeId}/outline-imports`),
   graphNodeDelete: (unitId: string, nodeId: string) =>
     request<{ ok: boolean }>(`/material-units/${unitId}/graph-nodes/${nodeId}`, { method: 'DELETE' }),
   initialOutline: (unitId: string, input: { teaching_item_ids: string[]; syllabus_item_ids: string[]; outline_node_ids: string[]; title?: string }) =>

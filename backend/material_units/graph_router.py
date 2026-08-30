@@ -197,6 +197,33 @@ async def graph_chat_save(unit_id: str, chat_id: str, payload: dict, request: Re
     return {"ok": True, "node_id": node_id, "title": title, "md_file": str(md_path), "content": md_content}
 
 
+@router.get("/{unit_id}/graph-nodes/{node_id}/outline-imports")
+async def graph_node_outline_imports(unit_id: str, node_id: str) -> dict:
+    """反查某图谱节点被导入到了哪些大纲位置(evidence.locator == graph:<node_id>)."""
+    record = await _load_record(unit_id)
+    locator = f"graph:{node_id}"
+    imports = []
+    seen = set()
+    for outline in reversed(record.get("knowledge_outlines") or []):
+        for node in (outline.get("nodes") or []):
+            matches = [e for e in (node.get("evidence") or []) if str(e.get("locator")) == locator]
+            if not matches:
+                continue
+            key = f"{outline.get('id')}:{outline.get('version')}:{node.get('id')}"
+            if key in seen:
+                continue  # 同轮廓+节点, 去重
+            seen.add(key)
+            imports.append({
+                "outline_id": outline.get("id"), "outline_version": outline.get("version"),
+                "outline_title": outline.get("title") or "",
+                "node_id": node.get("id"), "node_title": node.get("title") or "",
+                "quote": matches[0].get("quote") or "",
+            })
+    # 按 outline 版本倒序(最新在前)
+    imports.sort(key=lambda i: i.get("outline_version", 0), reverse=True)
+    return {"items": imports}
+
+
 @router.get("/{unit_id}/graph-nodes")
 async def graph_nodes(unit_id: str, material_id: str = "") -> dict:
     record = await _load_record(unit_id)
