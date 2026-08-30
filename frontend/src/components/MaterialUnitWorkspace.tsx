@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import GraphView from './GraphView';
 import {
   AlertCircle, ArrowDown, ArrowLeft, ArrowUp, BookOpen, Check, CheckCircle2,
@@ -92,6 +92,9 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
   const [graphSelectedId, setGraphSelectedId] = useState('');
   const [graphImportSet, setGraphImportSet] = useState<Set<string>>(new Set());
   const [outlineHistoryOpen, setOutlineHistoryOpen] = useState(false);
+  // 三列可拖动: 列宽(px), null=auto/fr
+  const [colW, setColW] = useState<{ side: number | null; main: number | null; outline: number | null }>({ side: null, main: null, outline: null });
+  const dragSplit = useRef<{ which: '0' | '1'; startX: number; startW: number } | null>(null);
   // 教学补充对话框: 提示词 → dsh 生成 → 预览 → 同意/编辑
   const [teacherNoteDlg, setTeacherNoteDlg] = useState<{ nodeId: string; nodeTitle: string } | null>(null);
   const [tnInstruction, setTnInstruction] = useState('');
@@ -330,6 +333,40 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
     setGraphImportSet(new Set(all.map((g) => g.id)));
   };
 
+  // ---- 三列可拖动: 分隔条 pointer 事件 ----
+  const startSplitDrag = (which: '0' | '1') => (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const wrap = document.querySelector('.material-unit-layout');
+    const side = wrap?.querySelector('.unit-sidebar');
+    const outline = wrap?.querySelector('.outline-panel');
+    // 0=拖 side|main 边界(改 side 宽); 1=拖 main|outline 边界(改 outline 宽)
+    const startW = which === '0'
+      ? (side?.getBoundingClientRect().width ?? 250)
+      : (outline?.getBoundingClientRect().width ?? 430);
+    dragSplit.current = { which, startX, startW };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  };
+  const onSplitMove = (e: React.PointerEvent) => {
+    const d = dragSplit.current;
+    if (!d) return;
+    const delta = e.clientX - d.startX;
+    if (d.which === '0') {
+      // 拖 side|main 边界: side = 起始 + 向右为正(向右拖 side 变宽)
+      const w = Math.min(450, Math.max(200, d.startW + delta));
+      setColW((cur) => ({ ...cur, side: w }));
+    } else {
+      // 拖 main|outline 边界: outline = 起始 - 拖向右为正(向右拖 outline 变宽)
+      const w = Math.min(640, Math.max(320, d.startW + delta));
+      setColW((cur) => ({ ...cur, outline: w }));
+    }
+  };
+  const endSplitDrag = () => { dragSplit.current = null; };
+  // 三列用 CSS 变量驱动(inline 变量不会被 !important 的 grid-template-columns 顶掉)
+  const muLayoutStyle: React.CSSProperties | undefined = (colW.side || colW.outline)
+    ? ({ '--muw-side': `${colW.side ?? 250}px`, '--muw-outline': `${colW.outline ?? 430}px` } as React.CSSProperties)
+    : undefined;
+
   // ---- 教学补充: 提示词 → dsh 生成候选 → 预览 → 同意/编辑后落库 ----
   const openTeacherNote = (nodeId: string, nodeTitle: string) => {
     setTeacherNoteDlg({ nodeId, nodeTitle });
@@ -475,8 +512,8 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
       <div><button type="button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? 'spin' : ''} size={16} />刷新</button><button type="button" onClick={onGoLibrary}><ArrowLeft size={16} />课程资料库</button></div>
     </header>
     {(error || notice) && <div className={`material-unit-message ${error ? 'is-error' : ''}`}><AlertCircle size={16} /><span>{error || notice}</span><button type="button" onClick={() => { setError(''); setNotice(''); }} aria-label="关闭提示"><X size={15} /></button></div>}
-    {!units.length ? <main className="material-unit-empty"><Database size={30} /><h3>还没有资料单元</h3><p>请先到课程资料库选择进度表、大纲和教材。</p><button type="button" onClick={onGoLibrary}>前往课程资料库</button></main> : <div className="material-unit-layout">
-      <aside className="unit-sidebar">
+    {!units.length ? <main className="material-unit-empty"><Database size={30} /><h3>还没有资料单元</h3><p>请先到课程资料库选择进度表、大纲和教材。</p><button type="button" onClick={onGoLibrary}>前往课程资料库</button></main> : <div className="material-unit-layout" style={muLayoutStyle}>
+      <div className="mu-split" data-split="0" onPointerDown={startSplitDrag('0')} onPointerMove={onSplitMove} onPointerUp={endSplitDrag} /><aside className="unit-sidebar">
         <header><strong>单元列表</strong><span>{units.length}</span></header>
         <div className="unit-list">{units.map((item) => <div key={item.id} className={`unit-list-item ${unit?.id === item.id ? 'active' : ''}`}><button type="button" onClick={() => void openUnit(item.id)}><Database size={17} /><span><strong>{item.title}</strong><small>{item.material_count} 份资料 · {item.linked_unit_count} 个关联</small><time>{formatDate(item.updated_at)}</time></span></button><div><button type="button" title="重命名" onClick={() => setDialog({ mode: 'rename', unit: item, title: item.title })}><Edit3 size={14} /></button><button type="button" title="删除" onClick={() => setDialog({ mode: 'delete', unit: item })}><Trash2 size={14} /></button></div></div>)}</div>
         <footer><button type="button" disabled={!unit || units.length < 2} onClick={() => unit && setDialog({ mode: 'link-files', target: unit, sourceUnitId: '', materialIds: [] })}><Link2 size={15} />关联其他单元资料</button><button type="button" disabled={!unit || units.length < 2} onClick={() => unit && setDialog({ mode: 'merge', target: unit, sourceIds: [], title: unit.title })}><GitMerge size={15} />整合为一个单元</button></footer>
@@ -506,7 +543,7 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
         </>}
       </main>
 
-      <aside className="outline-panel">
+      <div className="mu-split" data-split="1" onPointerDown={startSplitDrag('1')} onPointerMove={onSplitMove} onPointerUp={endSplitDrag} /><aside className="outline-panel">
         <header><div><span>本次课成果</span><strong>知识大纲</strong><small>只定义要讲的知识点，不编排教学活动和讲解顺序</small></div>{outline && <select value={`${outline.id}:${outline.version}`} onChange={(event) => { const [id, version] = event.target.value.split(':'); selectOutline(outlines.find((item) => item.id === id && item.version === Number(version)) || null); }}>{outlines.slice().sort((a, b) => b.updated_at.localeCompare(a.updated_at)).map((item) => <option key={`${item.id}:${item.version}`} value={`${item.id}:${item.version}`}>v{item.version} · {item.title}</option>)}</select>}<button type="button" className="outline-history-btn" title="版本历史" onClick={() => setOutlineHistoryOpen(true)}><History size={13} /></button></header>
         {!outline ? <div className="outline-empty"><BookOpen size={28} /><strong>尚未生成知识大纲</strong><span>完成左侧范围规划后，结果会固定显示在这里。</span>{latest.length > 0 && <button type="button" onClick={() => selectOutline(latest[0])}>打开最近大纲</button>}</div> : <>
           <div className="outline-status"><span className={outline.status === 'confirmed' ? 'confirmed' : ''}>{outline.status === 'confirmed' ? '已确认' : '草稿'}</span><strong>第 {outline.version} 版</strong><small>{outline.change_summary}</small></div>
