@@ -296,26 +296,39 @@ async def graph_node_unlink_outline(unit_id: str, node_id: str, payload: dict) -
     if not outline_id or not target_node_id:
         raise HTTPException(status_code=422, detail="缺少 outline_id 或 node_id")
     record = await _load_record(unit_id)
+    # 找到含该 target_node_id 的版本: 用户当前看的是哪个节点, 就取消导入哪个版本。
+    # 不能只取"最新版本"——图谱节点可能只存在于较早版本(v4), 最新版(v5)已无该节点。
     latest = None
+    found_node = None
     for outline in reversed(record.get("knowledge_outlines") or []):
-        if outline.get("id") == outline_id:
+        if outline.get("id") != outline_id:
+            continue
+        node = next((n for n in (outline.get("nodes") or []) if str(n.get("id")) == target_node_id), None)
+        if node is not None:
             latest = outline
+            found_node = node
             break
-    if latest is None:
-        raise HTTPException(status_code=404, detail="未找到知识大纲")
-    node = next((n for n in (latest.get("nodes") or []) if str(n.get("id")) == target_node_id), None)
-    if node is None:
-        raise HTTPException(status_code=404, detail="大纲内未找到目标节点")
+    if latest is None or found_node is None:
+        raise HTTPException(status_code=404, detail="大纲内未找到目标节点（可能该版本已无此节点）")
+    node = found_node
     locator = f"graph:{node_id}"
+    # 先拿到该图谱节点标题(用于删 teacher_note 对应块), 再删 evidence
+    graph_title = ""
+    for gnode in record.get("graph_nodes") or []:
+        if str(gnode.get("id")) == node_id:
+            graph_title = str(gnode.get("title") or "")
+            break
     node["evidence"] = [e for e in (node.get("evidence") or []) if str(e.get("locator")) != locator]
-    # 清理 teacher_note 对应片段
+    # 清理 teacher_note 对应片段: 删掉以该图谱标题开头的"教材研读补充"块(修复 evidence 先删导致 any() 恒 False 的 bug)
     old_note = node.get("teacher_note") or ""
-    quote_prefix = f"教材研读补充："
-    # 按 \n\n 块拆, 保留非该图谱块的
+    target_prefix = f"教材研读补充：{graph_title}"
     blocks = [b for b in re.split(r"\n\n+", old_note) if b.strip()]
-    kept = [b for b in blocks if not (b.startswith("教材研读补充") and b.strip() and any(str(e.get("locator")) == locator for e in (node.get("evidence") or [])))]
-    # 更精确: 记录曾挂的标题(从 evidence 已刪, 拿不到 → 兜底用块内标题匹配 node_id 难; 用剩余 mapping)
-    node["teacher_note"] = "\n\n".join(kept) if kept else ""
+    kept = []
+    for b in blocks:
+        if b.startswith("教材研读补充") and graph_title and b.startswith(target_prefix):
+            continue  # 该图谱导入的补充块, 删掉
+        kept.append(b)
+    node["teacher_note"] = "\n\n".join(kept).strip() if kept else ""
     latest["updated_at"] = utc_now()
     record["updated_at"] = utc_now()
     await _save_record(record)
