@@ -239,3 +239,8 @@
 /* 大纲要求: 教师自定义补充 */
 
 
+
+/* 编辑大纲: 教学补充编辑框 */
+.node-editor-row { grid-template-columns: 64px minmax(0,1fr) auto auto; }
+.node-editor-row .node-teacher-editor { grid-column: 1 / -1; min-height: 44px; resize: vertical; padding: 6px 8px; border: 1px solid #ccd8e5; border-radius: 5px; color: #34475d; background: #fafbfd; font-size: 12px; line-height: 1.6; }
+.node-editor-row .node-teacher-editor:focus { outline: 0; border-color: #93baf8; box-shadow: 0 0 0 2.5px rgba(37, 99, 235, .1); }
