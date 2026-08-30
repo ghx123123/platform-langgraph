@@ -858,6 +858,7 @@ export interface MaterialUnitSyllabusMatch {
   reason: string;
   recommended: boolean;
   evidence: MaterialUnitEvidence;
+  custom?: boolean;  // 教师自定义/补充条目(非大纲原文)
 }
 
 export interface MaterialUnitScopeAlignment {

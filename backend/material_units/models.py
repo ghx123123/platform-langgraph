@@ -180,6 +180,19 @@ class SyllabusMatchRequest(BaseModel):
     teaching_item_ids: list[str] = Field(min_length=1, max_length=20)
     use_model: bool = True
     limit_per_category: int = Field(default=4, ge=1, le=8)
+    # 教师自定义/补充的教学要求(纯文本, 不进 evidence 不生成独立节点, 仅作为选中依据)
+    custom_requirements: list["CustomRequirement"] = Field(default_factory=list, max_length=20)
+
+
+class CustomRequirement(BaseModel):
+    category: SyllabusRequirementCategory = "knowledge"
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(default="", max_length=2000)
+
+    def stable_id(self) -> str:
+        import hashlib
+        digest = hashlib.sha256(f"custom:{self.title}:{self.content}".encode("utf-8")).hexdigest()[:12]
+        return f"custom-{digest}"
 
 
 class KnowledgeEvidence(BaseModel):
@@ -210,6 +223,7 @@ class SyllabusMatchItem(BaseModel):
     reason: str
     recommended: bool = False
     evidence: KnowledgeEvidence
+    custom: bool = False  # 教师自定义/补充条目(非大纲原文)
 
 
 class SyllabusMatchResponse(BaseModel):
@@ -270,6 +284,8 @@ class KnowledgeOutlineCreate(BaseModel):
     nodes: list[KnowledgeNode] = Field(default_factory=list, max_length=240)
     status: Literal["draft", "confirmed"] = "draft"
     teacher_instruction: str = Field(default="", max_length=4000)
+    # 教师自定义/补充的教学要求(仅作选中依据, 不生成独立节点)
+    custom_requirements: list["CustomRequirement"] = Field(default_factory=list, max_length=20)
 
 
 class KnowledgeOutlineUpdate(BaseModel):

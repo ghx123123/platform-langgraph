@@ -218,3 +218,28 @@
 .gpi-detail-foot { flex: none; }
 @media (max-width: 1180px) { .gpi-body { grid-template-columns: 216px minmax(0, 1fr) 300px; } .gpi-canvas-toolbar { left: calc(216px + (100% - 216px - 300px) / 2); } }
 @media (max-width: 980px) { .gpi-hidden-sm { display: none; } .gpi-body { grid-template-columns: 200px minmax(0, 1fr) minmax(240px, 34%); } }
+
+/* 历史大纲版本列表 */
+.outline-history-btn { margin-left: 6px; min-width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #ccd8e5; border-radius: 5px; color: #40546d; background: #fff; cursor: pointer; }
+.outline-history-btn:hover { border-color: #9fc2ed; background: #f1f7ff; }
+.outline-history-dialog { width: min(640px, calc(100vw - 40px)); }
+.outline-history-list { max-height: 420px; overflow: auto; padding: 12px 15px; display: grid; gap: 6px; }
+.outline-history-row { min-height: 56px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; border: 1px solid #e1e8f0; border-radius: 6px; background: #fff; }
+.outline-history-row.is-current { border-color: #a9c9ee; background: #eef6ff; }
+.outline-history-view { flex: 1; min-width: 0; display: grid; gap: 3px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.outline-history-view strong { color: #2c3e54; font-size: 13px; }
+.outline-history-row.is-current .outline-history-view strong { color: #1857b7; }
+.outline-history-view span { color: #718399; font-size: 11px; }
+.outline-history-current { font-style: normal; color: #1857b7; background: #eaf3ff; padding: 3px 8px; border-radius: 10px; font-size: 11px; }
+.outline-history-del { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #e6c2be; border-radius: 5px; color: #a33f37; background: #fff8f7; cursor: pointer; }
+.outline-history-del:hover { background: #fdeeec; }
+.outline-history-footer { padding: 12px 15px; display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #dfe7ef; }
+.outline-history-footer .secondary-button { color: #a33f37; border-color: #e6c2be; }
+
+/* 大纲要求: 教师自定义补充 */
+.requirement-group.is-custom h4 { color: #8a6d3b; }
+.requirement-group.is-custom label.selected { border-color: #d5c6a8; background: #fdf7ec; }
+.requirement-group.is-custom strong { color: #7a5c16; }
+.custom-req-add { margin-top: 8px; display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.custom-req-add button { min-height: 28px; padding: 0 10px; display: inline-flex; align-items: center; gap: 4px; border: 1px dashed #c9a227; border-radius: 5px; color: #8a6d3b; background: #fdf9ef; font-size: 11.5px; cursor: pointer; }
+.custom-req-add button:hover { background: #f8eed8; }

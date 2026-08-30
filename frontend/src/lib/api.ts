@@ -207,11 +207,11 @@ export const materialUnitApi = {
   reparseFile: (unitId: string, materialId: string, engine: string) =>
     request<{ task_id: string; status: string; engine: string }>(`/material-units/${unitId}/files/${materialId}/reparse`, { method: 'POST', body: JSON.stringify({ engine }) }),
   scopeOptions: (unitId: string) => request<import('../types/workflow').MaterialUnitScopeOptions>(`/material-units/${unitId}/scope-options`),
-  syllabusMatches: (unitId: string, teachingItemIds: string[], useModel = true) =>
-    request<import('../types/workflow').MaterialUnitScopeAlignment>(`/material-units/${unitId}/syllabus-matches`, { method: 'POST', body: JSON.stringify({ teaching_item_ids: teachingItemIds, use_model: useModel, limit_per_category: 4 }) }),
+  syllabusMatches: (unitId: string, teachingItemIds: string[], useModel = true, customRequirements: Array<{ category: string; title: string; content: string }> = []) =>
+    request<import('../types/workflow').MaterialUnitScopeAlignment>(`/material-units/${unitId}/syllabus-matches`, { method: 'POST', body: JSON.stringify({ teaching_item_ids: teachingItemIds, use_model: useModel, limit_per_category: 4, custom_requirements: customRequirements }) }),
   listKnowledgeOutlines: (unitId: string, includeVersions = false) =>
     request<{ items: import('../types/workflow').MaterialUnitKnowledgeOutline[] }>(`/material-units/${unitId}/knowledge-outlines${includeVersions ? '?include_versions=true' : ''}`),
-  createKnowledgeOutline: (unitId: string, input: { title?: string; teaching_item_ids: string[]; syllabus_item_ids: string[]; outline_node_ids: string[]; status?: 'draft' | 'confirmed'; teacher_instruction?: string }) =>
+  createKnowledgeOutline: (unitId: string, input: { title?: string; teaching_item_ids: string[]; syllabus_item_ids: string[]; outline_node_ids: string[]; status?: 'draft' | 'confirmed'; teacher_instruction?: string; custom_requirements?: Array<{ category: string; title: string; content: string }> }) =>
     request<import('../types/workflow').MaterialUnitKnowledgeOutline>(`/material-units/${unitId}/knowledge-outlines`, { method: 'POST', body: JSON.stringify(input) }),
   synthesizeOutline: (unitId: string, input: { teaching_item_ids: string[]; syllabus_item_ids: string[]; outline_node_ids: string[]; teacher_instruction?: string; title?: string }) =>
     request<import('../types/workflow').MaterialUnitKnowledgeOutline>(`/material-units/${unitId}/knowledge-outlines/synthesize`, { method: 'POST', body: JSON.stringify(input) }),

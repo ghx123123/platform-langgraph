@@ -584,7 +584,8 @@ def create_knowledge_outline(
     # 容错: 失效/过期范围选项不再整体报错, 静默跳过.
     # 保留匹配项; 只有用户明确选择了却全部失效时才提示刷新重选(极端情况, 前端已对齐则不会发生).
     def _keep_valid(ids: list[str] | None, valid_map: dict[str, object]) -> list[str]:
-        return [i for i in (ids or []) if i in valid_map]
+        # 教师自定义要求(id=custom-*) 不在 syllabus_map, 但应放行(它们由 requirements 携带)
+        return [i for i in (ids or []) if i in valid_map or i.startswith("custom-")]
     payload_teaching = _keep_valid(payload.get("teaching_item_ids", []), teaching_map)
     payload_syllabus = _keep_valid(payload.get("syllabus_item_ids", []), syllabus_map)
     payload_textbook = _keep_valid(payload.get("outline_node_ids", []), textbook_map)
@@ -611,6 +612,9 @@ def create_knowledge_outline(
         } for item in selected_textbook]
         if not nodes:
             for requirement in selected_requirements:
+                # 教师自定义/补充要求: 仅作为选中依据(requirements), 不生成大纲节点
+                if requirement.get("custom"):
+                    continue
                 nodes.append({
                     "id": str(uuid4()), "parent_id": None, "level": 1, "title": requirement["title"],
                     "description": requirement["content"], "is_key_point": requirement["category"] == "key_point",
