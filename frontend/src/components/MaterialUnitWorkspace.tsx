@@ -362,9 +362,9 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
     }
   };
   const endSplitDrag = () => { dragSplit.current = null; };
-  // 三列用 CSS 变量驱动(inline 变量不会被 !important 的 grid-template-columns 顶掉)
+  // 三列用 CSS 变量驱动列宽(flex-basis), 拖动时实时更新
   const muLayoutStyle: React.CSSProperties | undefined = (colW.side || colW.outline)
-    ? ({ '--muw-side': `${colW.side ?? 250}px`, '--muw-outline': `${colW.outline ?? 430}px` } as React.CSSProperties)
+    ? ({ '--muw-side': `${colW.side ?? 260}px`, '--muw-outline': `${colW.outline ?? 420}px` } as React.CSSProperties)
     : undefined;
 
   // ---- 教学补充: 提示词 → dsh 生成候选 → 预览 → 同意/编辑后落库 ----
