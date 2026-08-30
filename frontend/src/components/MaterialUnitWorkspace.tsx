@@ -352,11 +352,11 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
     if (!d) return;
     const delta = e.clientX - d.startX;
     if (d.which === '0') {
-      // 拖 side|main 边界: side = 起始 + 向右为正(向右拖 side 变宽)
-      const w = Math.min(450, Math.max(200, d.startW + delta));
+      // 拖 side|main 边界: 向右拖 → side 变窄, 让空间给右侧 main(主流约定: 分隔条右侧变宽)
+      const w = Math.min(450, Math.max(200, d.startW - delta));
       setColW((cur) => ({ ...cur, side: w }));
     } else {
-      // 拖 main|outline 边界: outline = 起始 - 拖向右为正(向右拖 outline 变宽)
+      // 拖 main|outline 边界: 向右拖 → outline 变宽(分隔条右侧变宽)
       const w = Math.min(640, Math.max(320, d.startW + delta));
       setColW((cur) => ({ ...cur, outline: w }));
     }
