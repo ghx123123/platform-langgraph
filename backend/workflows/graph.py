@@ -380,9 +380,13 @@ def build_workflow_graph(
         await emit("node.started", "teach_knowledge", f"教师开始第 {iteration} 轮知识讲授", {"phase": "teach_knowledge", "iteration": iteration})
         previous = state.get("supervisor_review", {})
         focus = _round_focus(state, iteration)
+        async def _stream_token(text: str) -> None:
+            await emit("node.token", "teach_knowledge", "正在生成讲授内容", {"phase": "teach_knowledge", "iteration": iteration, "text": text})
+
         content = await model.generate(
             "你是课程教师。进行自然、准确、面向课堂的口头讲授。不要使用 <details>、<summary> 等网页标签，不要输出 Markdown 表格（需对比时用自然语言分点）。讲授需包含：①生活化或代码化的导入；②核心概念解释，含 1-2 个可运行的 Python 代码示例；③2 个课堂小练习——先给学生停顿口答的时间，再公布答案与解析；④一个检查理解的追问。若有督导建议要在本轮体现。",
             f"课程：{state['title']}\n{_scope_brief(state)}\n第 {iteration} 轮固定教学范围：{focus}\n本轮目标是打磨同一范围的教学设计，不得顺延到新的章节或未指定知识点。\n教学框架：{state['teaching_framework']}\n上轮督导：{previous or '首轮，无'}\n材料依据：{state['document_text'][:12000]}",
+            on_chunk=_stream_token,
         )
         message = _message("teacher", "课程教师", "teacher", "teach_knowledge", iteration, content)
         await emit("node.completed", "teach_knowledge", f"第 {iteration} 轮知识讲授完成", {"phase": "teach_knowledge", "iteration": iteration, "messages": [message], "output": content})
@@ -447,7 +451,10 @@ def build_workflow_graph(
             user = (f"课程：{state['title']}\n候选知识点：{'；'.join(_point_titles(state))}\n本轮重点：{_round_focus(state, iteration)}\n对照知识点：{_contrast_point(state, iteration)}\n"
                     f"学生问题：\n{question_text}\n材料依据：{state['document_text'][:10000]}")
 
-        answer = await model.generate(system, user)
+        async def _answer_stream_token(text: str) -> None:
+            await emit("node.token", "teacher_answer", "正在生成答疑内容", {"phase": "teacher_answer", "iteration": iteration, "text": text})
+
+        answer = await model.generate(system, user, on_chunk=_answer_stream_token)
         extra = [_message("user", "教研员（你）", "teacher", "teacher_answer", iteration, f"答疑要点：\n\n{note}")] if action == "outline" and note else []
         message = _message("teacher", "课程教师", "teacher", "teacher_answer", iteration, answer)
         await emit("node.completed", "teacher_answer", f"第 {iteration} 轮教师答疑完成", {"phase": "teacher_answer", "iteration": iteration, "messages": [*extra, message], "output": answer})

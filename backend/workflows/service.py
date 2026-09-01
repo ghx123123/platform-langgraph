@@ -118,11 +118,21 @@ class WorkflowService:
             "started_at": utc_now().isoformat(),
             "metrics_index": 0,
         }
+        token_buf: dict[str, Any] = {}
         metrics_token = self.model.begin_metrics_trace()
 
         async def emit(event_type: str, node: str | None, message: str, payload: dict[str, Any]) -> None:
             nonlocal completed_steps
             payload = dict(payload)
+            if event_type == "node.token":
+                # token 合并: 每 ~40 字符发一条 node.token(避免逐 token 撑爆事件表), 末尾 flush 由调用方保证
+                token_text = str(payload.get("text") or "")
+                token_buf["text"] = token_buf.get("text", "") + token_text
+                if len(token_buf["text"]) >= 40:
+                    merged = token_buf["text"]
+                    token_buf["text"] = ""
+                    await self._emit(run.id, "node.token", node, message, {**payload, "text": merged})
+                return
             if event_type == "node.started":
                 await self.repository.update_run(run.id, status="running", current_node=node)
                 runtime.update({
@@ -146,6 +156,11 @@ class WorkflowService:
                     "completed_steps": completed_steps,
                     "total_steps": total_steps,
                 })
+                # flush 残留 token(不足40字符的尾部)
+                if token_buf.get("text"):
+                    remaining = token_buf["text"]
+                    token_buf["text"] = ""
+                    await self._emit(run.id, "node.token", node, message, {"text": remaining})
             await self._emit(run.id, event_type, node, message, payload)
 
         async def heartbeat() -> None:

@@ -10,7 +10,9 @@
 #     请求: {"method":"agent_run","params":{"system_prompt","user_prompt","session_id","model","iterations","round_focus"}}
 #     响应: {"ok":true,"final_response":str,"finish_reason":str,"iterations":int}
 #
-# v0.3.2 — agent_run: 复用 session 的多轮自主迭代(每轮基于上一轮产出修订, 越迭代越收敛)
+# v0.3.3 — stream: 传 params.stream=true 时, 经 on_notification 把 assistant/chunk(text-delta)
+#            实时打 stdio: {"id","event":"chunk","text"} / {"event":"phase","phase":...} / {"event":"request"}
+#            平台前端据此展示"真实正在生成的过程", 最终响应仍含 final_response 兼容。
 
 import json
 import logging
@@ -20,7 +22,7 @@ from pathlib import Path
 
 from deepseek_harness import DeepSeekHarness
 
-BRIDGE_VERSION = "0.3.2"
+BRIDGE_VERSION = "0.3.3"
 
 # pi-ai catalog 动态补丁: deepseek.json 未收录官网新模型(如 deepseek-v4-flash-vision-exp)
 # 时自动补入(以 flash 为模板 + vision 输入), 幂等。避免"has no configured model"。
@@ -219,7 +221,40 @@ def main() -> None:
 
                 log.info("generate id=%s model=%s (%s/%s) session=%s", rid, model, provider, model_id, session_id or "new")
                 harness = ensure_harness(workdir, session_root, model)
-                result = harness.run(task_prompt, session_id=session_id or None)
+                # 流式转发: SDK 的 on_notification 收到 session.event, 其 payload.event 内含完整事件序列
+                # (turn/start, assistant/chunk(text-delta 逐token), ...)。通过 stdio 实时打出去, 让平台前端
+                # 看到"真实正在生成的过程"而不是事后播完成品。
+                stream_enabled = bool(params.get("stream", False))
+                def _on_notification(notification) -> None:
+                    if not stream_enabled:
+                        return
+                    payload = getattr(notification, "payload", None) or {}
+                    if not isinstance(payload, dict):
+                        return
+                    ev = payload.get("event") or {}
+                    if not isinstance(ev, dict):
+                        return
+                    etype = str(ev.get("type") or "")
+                    data = ev.get("data") or {}
+                    if etype == "assistant/chunk":
+                        chunk = data.get("chunk") or {}
+                        if isinstance(chunk, dict) and chunk.get("type") == "text-delta" and chunk.get("text"):
+                            print(json.dumps({
+                                "id": rid, "event": "chunk", "text": chunk["text"],
+                            }, ensure_ascii=False), flush=True)
+                    elif etype in ("turn/start", "step/start", "turn/end"):
+                        print(json.dumps({
+                            "id": rid, "event": "phase", "phase": etype,
+                            "turn": data.get("turn"), "step": data.get("step"),
+                        }, ensure_ascii=False), flush=True)
+                    elif etype == "request/header":
+                        header = data.get("header") or {}
+                        config = header.get("config") or {}
+                        print(json.dumps({
+                            "id": rid, "event": "request",
+                            "provider": config.get("provider", ""), "model": config.get("model", ""),
+                        }, ensure_ascii=False), flush=True)
+                result = harness.run(task_prompt, session_id=session_id or None, on_notification=_on_notification)
                 final = result.final_response or ""
                 reason = result.finish_reason or ""
                 if reason == "error":
@@ -280,7 +315,27 @@ def main() -> None:
                             f"【原始任务】\n{user_prompt}"
                         )
                     log.info("agent_run round=%s/%s id=%s model=%s session=%s", i, iterations, rid, model, session_id or "new")
-                    result = harness.run(task_prompt, session_id=session_id or None)
+                    def _round_on_notification(notification) -> None:
+                        payload = getattr(notification, "payload", None) or {}
+                        if not isinstance(payload, dict):
+                            return
+                        ev = payload.get("event") or {}
+                        if not isinstance(ev, dict):
+                            return
+                        etype = str(ev.get("type") or "")
+                        data = ev.get("data") or {}
+                        if etype == "assistant/chunk":
+                            chunk = data.get("chunk") or {}
+                            if isinstance(chunk, dict) and chunk.get("type") == "text-delta" and chunk.get("text"):
+                                print(json.dumps({
+                                    "id": rid, "event": "chunk", "round": i, "text": chunk["text"],
+                                }, ensure_ascii=False), flush=True)
+                        elif etype in ("turn/start", "step/start", "turn/end", "request/header"):
+                            print(json.dumps({
+                                "id": rid, "event": "phase", "phase": etype, "round": i,
+                                "turn": data.get("turn"), "step": data.get("step"),
+                            }, ensure_ascii=False), flush=True)
+                    result = harness.run(task_prompt, session_id=session_id or None, on_notification=_round_on_notification)
                     last_final = result.final_response or ""
                     reason = result.finish_reason or ""
                     iterations_done = i

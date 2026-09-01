@@ -51,6 +51,7 @@ class DshAgentEngine:
         self._base_url = base_url or ""
         self._proc: asyncio.subprocess.Process | None = None
         self._pending: dict[int, asyncio.Future[dict]] = {}
+        self._streams: dict[int, asyncio.Queue] = {}
         self._next_id = 1
         self._stdout_task: asyncio.Task | None = None
         self._stderr_task: asyncio.Task | None = None
@@ -145,7 +146,17 @@ class DshAgentEngine:
                 except json.JSONDecodeError:
                     logger.warning("dsh bridge: non-JSON stdout: %.200s", text)
                     continue
-                fut = self._pending.pop(int(msg.get("id", -1)), None)
+                rid = int(msg.get("id", -1))
+                # 流式消息(chunk/phase/request) → 经线程安全投递到主 loop 的流队列
+                if msg.get("event") in ("chunk", "phase", "request"):
+                    for key, (queue, main_loop) in list(self._streams.items()):
+                        if isinstance(key, int) and key == rid:
+                            try:
+                                main_loop.call_soon_threadsafe(queue.put_nowait, msg)
+                            except RuntimeError:
+                                pass
+                    continue
+                fut = self._pending.pop(rid, None)
                 if fut is not None and not fut.done():
                     fut.set_result(msg)
         except asyncio.CancelledError:
@@ -169,13 +180,14 @@ class DshAgentEngine:
         except asyncio.CancelledError:
             pass
 
-    async def _send(self, payload: dict, timeout: float = 300.0) -> dict:
+    async def _send(self, payload: dict, timeout: float = 300.0, rid: int | None = None) -> dict:
         await self.ensure_started()
         proc = self._proc
         if proc is None or proc.stdin is None or proc.returncode is not None:
             raise DshEngineError(f"dsh bridge not running (rc={proc.returncode if proc else 'none'})")
-        rid = self._next_id
-        self._next_id += 1
+        if rid is None:
+            rid = self._next_id
+            self._next_id += 1
         payload["id"] = rid
         fut: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
         self._pending[rid] = fut
@@ -194,6 +206,81 @@ class DshAgentEngine:
 
     def _stderr_tail(self) -> str:
         return "\n".join(self._stderr_lines[-15:])
+
+    async def generate_stream(self, system_prompt: str, user_prompt: str, model: str | None = None):
+        """dsh 流式生成: async generator, 逐 chunk yield {"event":"chunk","text"} / {"event":"phase"}。
+
+        桥端 stream:true 时 on_notification 把 text-delta 实时打 stdio(每行JSON);
+        引擎在独立 loop 线程的 _read_stdout 收, 经 run_coroutine_threadsafe 投到主 loop 的队列。
+        哨兵 {"event":"done","final_response"} 表示结束。
+        """
+        queue: asyncio.Queue = asyncio.Queue()
+        main_loop = asyncio.get_running_loop()
+        user_id = object()
+        # 注册"流接受方"(跨 loop): _read_stdout 在独立 loop 线程, 用 run_coroutine_threadsafe 投递
+        self._streams[user_id] = (queue, main_loop)
+
+        async def _runner() -> str:
+            """独立 loop 上执行真实请求(内部 _send 也是那个 loop 的协程)。"""
+            try:
+                result = await self._generate_stream_request(system_prompt, user_prompt, model, user_id)
+                try:
+                    asyncio.run_coroutine_threadsafe(queue.put({
+                        "event": "done",
+                        "final_response": str(result.get("final_response") or ""),
+                        "finish_reason": str(result.get("finish_reason") or ""),
+                    }), main_loop)
+                except RuntimeError:
+                    pass
+                return str(result.get("final_response") or "")
+            except Exception as exc:
+                try:
+                    asyncio.run_coroutine_threadsafe(queue.put({"event": "error", "error": str(exc)}), main_loop)
+                except RuntimeError:
+                    pass
+                raise
+            finally:
+                self._streams.pop(user_id, None)
+
+        task = asyncio.run_coroutine_threadsafe(_runner(), self._ensure_loop_thread())
+        # 主 loop 消费队列直到哨兵
+        while True:
+            item = await queue.get()
+            if item.get("event") == "done":
+                yield item
+                break
+            if item.get("event") == "error":
+                raise DshEngineError(str(item.get("error") or "dsh stream error"))
+            yield item
+        # runner 完成或异常: 阻止 task 泄漏
+        try:
+            await asyncio.wrap_future(task)
+        except Exception:
+            pass
+
+    async def _generate_stream_request(
+        self, system_prompt: str, user_prompt: str, model: str | None, stream_key,
+    ) -> dict:
+        """在独立 loop 上跑: 预注册数字 rid→(queue,main_loop) 以便 _read_stdout 投递 chunk; _send 发请求."""
+        # 先领取 rid(与 _send 内一致的自增逻辑), 预注册 flow
+        rid = self._next_id
+        self._next_id += 1
+        queue, main_loop = self._streams[stream_key]
+        self._streams[rid] = (queue, main_loop)
+        try:
+            msg = await self._send({
+                "method": "generate",
+                "params": {
+                    "system_prompt": system_prompt,
+                    "user_prompt": user_prompt,
+                    "session_id": str(uuid.uuid4()),
+                    "model": model or self._default_model,
+                    "stream": True,
+                },
+            }, rid=rid)
+            return msg
+        finally:
+            self._streams.pop(rid, None)
 
     async def generate(self, system_prompt: str, user_prompt: str, model: str | None = None) -> str:
         """一次智能体调用: 返回最终响应文本。模型不同时桥会重建 harness(换 provider/model)。"""

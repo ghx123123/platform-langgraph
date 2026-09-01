@@ -3,7 +3,7 @@ import re
 from contextvars import ContextVar, Token
 from math import ceil
 from time import perf_counter
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -128,7 +128,7 @@ class ModelClient:
             "estimated": estimated,
         })
 
-    async def generate(self, system_prompt: str, user_prompt: str) -> str:
+    async def generate(self, system_prompt: str, user_prompt: str, on_chunk: Callable[[str], Awaitable[None]] | None = None) -> str:
         started = perf_counter()
         if self.provider == "dsh":
             # dsh 智能体: 内嵌引擎复用子进程; 模型变了(设置面板切换) → 重建引擎(桥按新模型重建 harness)
@@ -136,7 +136,19 @@ class ModelClient:
                 await self._engine.close()
                 self._engine = None
             engine = self.ensure_dsh_engine()
-            output = await engine.generate(system_prompt, user_prompt, model=self.model_name)
+            if on_chunk is not None:
+                # 流式: engine.generate_stream 逐 chunk 回调 on_chunk(供 emit node.token), 拼 final 返回
+                parts: list[str] = []
+                async for item in engine.generate_stream(system_prompt, user_prompt, model=self.model_name):
+                    if item.get("event") == "chunk":
+                        text = str(item.get("text") or "")
+                        parts.append(text)
+                        await on_chunk(text)
+                    elif item.get("event") == "done":
+                        parts = [str(item.get("final_response") or "")]
+                output = "".join(parts) or (await engine.generate(system_prompt, user_prompt, model=self.model_name))
+            else:
+                output = await engine.generate(system_prompt, user_prompt, model=self.model_name)
             self._record_metrics(started, system_prompt, user_prompt, output)
             return output
         if self._model is None:
@@ -178,6 +190,23 @@ class ModelClient:
         )
         self._record_metrics(started, system_prompt, user_prompt, result.get("final_response", ""))
         return result
+
+    async def generate_stream(self, system_prompt: str, user_prompt: str):
+        """dsh 流式生成: async generator, 逐 chunk yield {"event":"chunk","text"} 等真实事件。
+
+        供 workflow emit 成 node.token 流事件, 让前端看到"真实正在生成的过程"。
+        非 dsh provider 退化为单次 generate(仅 yield done)。
+        """
+        if self.provider != "dsh":
+            output = await self.generate(system_prompt, user_prompt)
+            yield {"event": "done", "final_response": output}
+            return
+        if self._engine is not None and getattr(self._engine, "default_model", None) != self.model_name:
+            await self._engine.close()
+            self._engine = None
+        engine = self.ensure_dsh_engine()
+        async for item in engine.generate_stream(system_prompt, user_prompt, model=self.model_name):
+            yield item
 
     @staticmethod
     def _strip_reasoning(text: str) -> str:

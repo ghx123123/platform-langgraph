@@ -87,15 +87,40 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
   const selectedNode = nodes.find((n) => n.key === selected) || nodes[0];
   const chatMessages = useMemo(() => messages.slice(-8), [messages]);
 
-  // dsh 生成过程: 基于选中节点的真实 message, 打字流逐字显示
+  // 节点 key → workflow phase 映射(node.token 事件的 node 字段用的是 phase)
+  const nodePhaseByKey: Record<string, string> = {
+    analysis: 'content_analysis', design: 'teaching_design', teach: 'teach_knowledge',
+    students: 'student_question', answer: 'teacher_answer', supervisor: 'supervisor_comment', finalize: 'finalize',
+  };
+  // 真实 token 流: 从 events 提取 node.token(按 node 分组的累积文本), 供右侧 dsh 流展示"真实正在生成"
+  const tokenTexts = useMemo(() => {
+    const map: Record<string, string> = {};
+    events.forEach((event) => {
+      if (event.event_type === 'node.token' && event.node) {
+        const text = (event.payload && event.payload.text) ? String(event.payload.text) : '';
+        map[event.node] = (map[event.node] || '') + text;
+      }
+    });
+    return map;
+  }, [events]);
+  const liveTokenText = tokenTexts[nodePhaseByKey[selected]] || '';
+  const hasLiveToken = liveTokenText.length > 0;
+
+  // dsh 生成过程: running 时用真实 node.token 流; 否则回退打字流(展示已有 message)
   useEffect(() => {
     setStreamDone(false);
     setStreaming(true);
     if (streamTimer.current) clearInterval(streamTimer.current);
-    // 纯文本: 用 textContent 赋值, 任何 HTML 标签(含转义实体)都不被解释, 只显示字面内容
+    const body = streamBodyRef.current;
+    // 真 token 流: 直接累积渲染(新事件到达自动追加)
+    if (hasLiveToken) {
+      if (body) { body.textContent = liveTokenText; body.scrollTop = body.scrollHeight; }
+      setStreamDone(false);
+      setStreaming(true);
+      return () => { if (streamTimer.current) clearInterval(streamTimer.current); };
+    }
     const text = (selectedNode?.message || `正在通过 dsh agent 处理「${selectedNode?.name || '当前'}」任务…`)
       .replace(/<\\?[a-z/][^>]*>/gi, '');
-    const body = streamBodyRef.current;
     if (body) {
       body.textContent = '';
       let i = 0;
@@ -116,7 +141,7 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
       }, 18);
     }
     return () => { if (streamTimer.current) clearInterval(streamTimer.current); };
-  }, [selected, selectedNode?.message]);
+  }, [selected, selectedNode?.message, liveTokenText, hasLiveToken]);
 
   const runningCount = nodes.filter((n) => n.state === 'running').length;
   const doneCount = nodes.filter((n) => n.state === 'done').length;

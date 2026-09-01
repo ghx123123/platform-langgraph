@@ -1,4 +1,5 @@
 import asyncio
+from typing import Awaitable, Callable
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -73,7 +74,7 @@ def test_teaching_graph_preserves_phase_order_and_iterations(tmp_path):
 
 def test_running_workflow_emits_observable_heartbeat(tmp_path, monkeypatch):
     class DelayedModelClient(ModelClient):
-        async def generate(self, system_prompt: str, user_prompt: str) -> str:
+        async def generate(self, system_prompt: str, user_prompt: str, on_chunk: Callable[[str], Awaitable[None]] | None = None) -> str:
             await asyncio.sleep(0.03)
             return await super().generate(system_prompt, user_prompt)
 
