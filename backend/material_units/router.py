@@ -15,7 +15,8 @@ from backend.course_archives.storage import list_archives
 from backend.material_units.models import (
     KnowledgeOutline, KnowledgeOutlineCreate, KnowledgeOutlineList, KnowledgeOutlineRefineRequest,
     KnowledgeOutlineRefineTask, KnowledgeOutlineRefineTaskList, KnowledgeOutlineUpdate,
-    MaterialUnitAppend, MaterialUnitCreate, MaterialUnitFileReferenceRequest, MaterialUnitList, MaterialUnitMergeRequest,
+    MaterialUnitAppend, MaterialUnitCreate, MaterialUnitFileReferenceRequest, MaterialUnitImportPrecheckItem,
+    MaterialUnitImportPrecheckRequest, MaterialUnitImportPrecheckResponse, MaterialUnitList, MaterialUnitMergeRequest,
     MaterialUnitRecord, MaterialUnitInitialOutline, MaterialUnitOutlineSave, MaterialUnitReferenceRequest,
     MaterialUnitRename, MaterialUnitScopeOptions, MaterialUnitScopeRequest, MaterialUnitSummary,
     SyllabusMatchRequest, SyllabusMatchResponse,
@@ -820,6 +821,44 @@ async def merge_units(unit_id: str, payload: MaterialUnitMergeRequest) -> Materi
 
 
 # ---------- P1: 后台异步解析任务 (仅资料单元路径, 并发2) ----------
+@router.post("/{unit_id}/import-precheck", response_model=MaterialUnitImportPrecheckResponse)
+async def unit_import_precheck(unit_id: str, payload: MaterialUnitImportPrecheckRequest) -> MaterialUnitImportPrecheckResponse:
+    """导入课程设计前的解析检查：报告每份材料的解析状态，标记需要先补齐解析的。
+
+    只为"导入课程设计"复用解析成果服务——凡是未完整提取(metadata_only/parse_failed/unsupported)
+    的材料都 needs_parse，前端据此先触发后台解析，完成后才真正 create 课程设计，避免二次解析。
+    """
+    settings = get_settings()
+    try:
+        record = await run_in_threadpool(load_material_unit, settings.material_unit_store_path, unit_id)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="未找到资料单元") from exc
+    # 解析状态以档案为准(材料解析后写回 archive.materials.parse_status)，跨关联单元统一检查
+    record, linked, archives, _ = await _scope_context(unit_id)
+    accessible = accessible_material_documents(record, linked, archives)
+    items: list[MaterialUnitImportPrecheckItem] = []
+    for material_id in payload.material_ids:
+        entry = accessible.get(material_id) or {}
+        material = entry.get("material") or {}
+        document = entry.get("document") or {}
+        status = material.get("parse_status") or "metadata_only"
+        has_raw = bool(document.get("raw_text"))
+        # 只有"完整提取"才算可直接复用；其余(含 metadata_only/parse_failed/unsupported)都需先补齐解析
+        needs_parse = status != "parsed" or not has_raw
+        items.append(MaterialUnitImportPrecheckItem(
+            material_id=material_id,
+            name=material.get("name") or material_id,
+            parse_status="parsed" if has_raw else status,
+            parse_message=material.get("parse_message") or "",
+            needs_parse=needs_parse,
+        ))
+    return MaterialUnitImportPrecheckResponse(
+        all_parsed=not any(item.needs_parse for item in items),
+        needs_parse=[item for item in items if item.needs_parse],
+        items=items,
+    )
+
+
 @router.post("/{unit_id}/parse-tasks", status_code=202)
 async def start_unit_parse(unit_id: str, payload: MaterialUnitAppend) -> dict:
     """后台解析 unit 关联的材料; 返回 task_id (立即), 进度用 GET 轮询。"""

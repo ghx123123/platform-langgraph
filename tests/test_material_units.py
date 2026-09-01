@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -787,3 +788,53 @@ def test_file_reference_and_unlink_control_scope_visibility(monkeypatch, tmp_pat
     assert removed.status_code == 200
     assert removed.json()["material_references"] == []
     assert hidden.json()["textbook_outline"] == []
+
+
+def test_import_precheck_flags_unparsed_materials(monkeypatch, tmp_path: Path) -> None:
+    """import-precheck 应把未完整提取的材料标记 needs_parse，用于导入前补齐解析。"""
+    archive_id = "11111111-1111-4111-8111-111111111111"
+    unit_id = "22222222-2222-4222-8222-222222222222"
+    archive = {
+        "id": archive_id, "name": "资料", "course_title": "课程", "updated_at": "2026-08-12T01:00:00Z",
+        "materials": [
+            {"id": "book-parsed", "name": "教材.pdf", "path": "教材.pdf", "extension": ".pdf", "category": "textbook", "parse_status": "parsed", "character_count": 100, "document_id": "doc-1", "sha256": "a"},
+            {"id": "guide-metadata", "name": "实验指导.docx", "path": "实验指导.docx", "extension": ".docx", "category": "experiment", "parse_status": "metadata_only", "character_count": 0},
+        ],
+        "_documents": {
+            "book-parsed": {"raw_text": "教材正文内容", "sections": []},
+            "guide-metadata": {},
+        },
+    }
+    record = {
+        "id": unit_id, "archive_id": archive_id, "archive_name": "资料", "title": "单元",
+        "material_ids": ["book-parsed", "guide-metadata"], "files": [],
+        "linked_units": [], "created_at": "2026-08-12T01:00:00Z", "updated_at": "2026-08-12T01:00:00Z",
+    }
+    save_material_unit(tmp_path / "units", record)
+    save_archive(tmp_path / "archives", archive)
+    monkeypatch.setattr(material_unit_router, "load_material_unit", lambda _store, _id: load_material_unit(tmp_path / "units", _id))
+    monkeypatch.setattr(material_unit_router, "load_archive", lambda _store, _id: archive)
+    monkeypatch.setattr(material_unit_router, "list_material_units", lambda _store: [record])
+    monkeypatch.setattr(
+        material_unit_router, "get_settings",
+        lambda: SimpleNamespace(
+            material_unit_store_path=tmp_path / "units",
+            course_archive_store_path=tmp_path / "archives",
+            course_design_store_path=tmp_path / "designs",
+            document_store_path=tmp_path / "documents",
+        ),
+    )
+    api = FastAPI()
+    api.include_router(material_unit_router.router)
+    client = TestClient(api)
+
+    response = client.post(f"/api/material-units/{unit_id}/import-precheck", json={"material_ids": ["book-parsed", "guide-metadata"]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["all_parsed"] is False
+    needs = body["needs_parse"]
+    assert [item["material_id"] for item in needs] == ["guide-metadata"]
+    parsed = next(item for item in body["items"] if item["material_id"] == "book-parsed")
+    assert parsed["needs_parse"] is False
+    assert parsed["parse_status"] == "parsed"

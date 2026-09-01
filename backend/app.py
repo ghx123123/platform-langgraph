@@ -1,6 +1,18 @@
+import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
+
+# Windows: 强制 ProactorEventLoop —— asyncio.create_subprocess_exec 只有 Proactor loop 支持，
+# 否则 dsh 引擎 spawn 桥子进程时抛 NotImplementedError。uvicorn 在 win+reload 会强制 Selector，
+# 所以提供自定义 loop setup 传给 uvicorn.loop，确保无论 reload 与否都用 Proactor。
+def _proactor_loop_setup(use_subprocess: bool = False) -> None:
+    import asyncio as _aio
+
+    if sys.platform == "win32":
+        _aio.set_event_loop_policy(_aio.WindowsProactorEventLoopPolicy())
+        _aio.get_event_loop_policy().new_event_loop()
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -134,4 +146,10 @@ async def ready(request: Request) -> dict[str, str]:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("backend.app:app", host=settings.host, port=settings.port, reload=settings.app_env == "development")
+    uvicorn.run(
+        "backend.app:app",
+        host=settings.host,
+        port=settings.port,
+        reload=settings.app_env == "development",
+        loop=_proactor_loop_setup,
+    )

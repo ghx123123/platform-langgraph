@@ -6,9 +6,11 @@
 #   响应: {"id": <int>, "ok": true, "final_response": str, "finish_reason": str}
 #        {"id": <int>, "ok": false, "error": str}
 #   probe: {"id": 0, "method": "probe"} -> {"id": 0, "ok": true, "version": "..."}
+#   agent_run: 同一 session 内多轮自主迭代(记忆+自查收敛)
+#     请求: {"method":"agent_run","params":{"system_prompt","user_prompt","session_id","model","iterations","round_focus"}}
+#     响应: {"ok":true,"final_response":str,"finish_reason":str,"iterations":int}
 #
-# v0.3.0 — 支持按请求切换 provider/model: 模型不同则重建 harness(重启 dsh runtime),
-# 并翻译常见错误(429 额度不足/401 key 无效)为中文提示。
+# v0.3.2 — agent_run: 复用 session 的多轮自主迭代(每轮基于上一轮产出修订, 越迭代越收敛)
 
 import json
 import logging
@@ -18,7 +20,7 @@ from pathlib import Path
 
 from deepseek_harness import DeepSeekHarness
 
-BRIDGE_VERSION = "0.3.1"
+BRIDGE_VERSION = "0.3.2"
 
 # pi-ai catalog 动态补丁: deepseek.json 未收录官网新模型(如 deepseek-v4-flash-vision-exp)
 # 时自动补入(以 flash 为模板 + vision 输入), 幂等。避免"has no configured model"。
@@ -243,6 +245,71 @@ def main() -> None:
                     "id": rid, "ok": True,
                     "final_response": final,
                     "finish_reason": reason,
+                }, ensure_ascii=False), flush=True)
+                continue
+
+            if method == "agent_run":
+                # 自主迭代: 同一 session 内做 N 轮, 每轮基于上一轮产出自查修订, 越迭代越收敛。
+                # 多轮记忆: 复用 session_id(不换新), dsh 记住此前各轮内容。
+                params = req.get("params", {})
+                system_prompt = str(params.get("system_prompt", ""))
+                user_prompt = str(params.get("user_prompt", ""))
+                session_id = str(params.get("session_id", ""))
+                model = str(params.get("model", default_model))
+                iterations = max(1, min(int(params.get("iterations", 2)), 5))
+                round_focus = str(params.get("round_focus", "请把上一版成果规范化、补全遗漏、修正疏漏，并给出更完整、更可用的最终版。"))
+                provider, model_id = MODEL_ROUTES.get(model, MODEL_ROUTES[default_model])
+
+                iterations_done = 0
+                last_final = ""
+                reasons = []
+                harness = ensure_harness(workdir, session_root, model)
+                for i in range(1, iterations + 1):
+                    if i == 1:
+                        task_prompt = (
+                            f"请严格按以下指令完成任务, 不要做多余解释。\n\n"
+                            f"【你的职责】\n{system_prompt}\n\n"
+                            f"【任务内容】\n{user_prompt}"
+                        )
+                    else:
+                        task_prompt = (
+                            f"请严格按以下指令完成任务。这是第 {i}/{iterations} 轮迭代。\n\n"
+                            f"【你的职责】\n{system_prompt}\n\n"
+                            f"【上一版成果】\n{last_final}\n\n"
+                            f"【本轮修订要求】\n{round_focus}\n\n"
+                            f"【原始任务】\n{user_prompt}"
+                        )
+                    log.info("agent_run round=%s/%s id=%s model=%s session=%s", i, iterations, rid, model, session_id or "new")
+                    result = harness.run(task_prompt, session_id=session_id or None)
+                    last_final = result.final_response or ""
+                    reason = result.finish_reason or ""
+                    iterations_done = i
+                    if reason == "error":
+                        err_text = ""
+                        for ev in reversed(getattr(result, "events", []) or []):
+                            data = ev.get("data") if isinstance(ev, dict) else None
+                            if isinstance(data, dict) and ev.get("type") == "turn/end":
+                                reason_obj = data.get("reason") or {}
+                                err_text = (reason_obj.get("error") or {}).get("message") or (reason_obj.get("failure") or {}).get("message") or ""
+                                if err_text:
+                                    break
+                        err_text = translate_error(err_text or last_final or "模型调用失败，请稍后重试")
+                        print(json.dumps({
+                            "id": rid, "ok": True,
+                            "final_response": last_final,
+                            "finish_reason": "error",
+                            "iterations": iterations_done,
+                            "error": err_text,
+                        }, ensure_ascii=False), flush=True)
+                        break
+                    reasons.append(reason)
+
+                print(json.dumps({
+                    "id": rid, "ok": True,
+                    "final_response": last_final,
+                    "finish_reason": reasons[-1] if reasons else "",
+                    "iterations": iterations_done,
+                    "turns": [{"round": i + 1, "finish_reason": reasons[i]} for i in range(len(reasons))],
                 }, ensure_ascii=False), flush=True)
                 continue
 

@@ -245,11 +245,30 @@ def build_workflow_graph(
             "你是学科教师和课程内容分析专家。仅返回 JSON 对象，字段为 summary、key_points、"
             "difficult_points、prerequisites、learner_misconceptions；后四项均为字符串数组。"
         )
+        user_material = (
+            f"课程：{state['title']}\n{_scope_brief({**state, 'knowledge_points': points})}\n只设计指定知识点，但必须先检查全文结构和各分区证据。\n材料：{_analysis_material({**state, 'knowledge_points': points}, sections)}\n补充说明：{state.get('context') or '无'}"
+        )
         try:
-            analysis = await model.generate_json(
-                prompt,
-                f"课程：{state['title']}\n{_scope_brief({**state, 'knowledge_points': points})}\n只设计指定知识点，但必须先检查全文结构和各分区证据。\n材料：{_analysis_material({**state, 'knowledge_points': points}, sections)}\n补充说明：{state.get('context') or '无'}",
-            )
+            provider = getattr(model, "provider", "")
+            if provider == "dsh" and not model.is_mock:
+                # dsh 完整 agent 能力：多轮记忆 + 自主迭代。同一 session 内迭代 2 轮，
+                # 每轮基于上一轮产出修订(补全遗漏/修正疏漏/规范化 JSON), 越迭代越收敛。
+                raw = await model.agent_iterate(
+                    prompt, user_material, iterations=2,
+                    round_focus="请把上一版修正规范化：重排 key_points 使其成体系(概念→语法→应用)、补全遗漏的难点与误区、修正疏漏；最终版必须是一个完整合法的 JSON 对象，且不要用代码块包裹。",
+                )
+                # 优先纯提取(不二次调用); 若末轮 JSON 不规整导致提取失败, 退一步用 generate_json 重试,
+                # 避免"提取失败→清零兜底"导致下游空 analysis 或 run 失败。
+                try:
+                    analysis = model._extract_json_text(raw.get("final_response", ""))
+                except (ValueError, TypeError) as exc:
+                    logger.warning(
+                        "content_analysis 迭代末轮 JSON 提取失败(%s)，回退 generate_json 重试。末轮输出前300字: %s",
+                        exc, str(raw.get("final_response", ""))[:300],
+                    )
+                    analysis = await model.generate_json(prompt, user_material)
+            else:
+                analysis = await model.generate_json(prompt, user_material)
         except (ValueError, TypeError) as exc:
             logger.warning("content_analysis 未能解析模型 JSON，使用兜底内容: %s", exc)
             await emit("node.degraded", "content_analysis", "模型未返回可解析的结构化内容，本节使用通用模板", {"phase": "design", "reason": str(exc)})

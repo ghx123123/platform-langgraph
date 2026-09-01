@@ -271,3 +271,26 @@
 .teacher-note-edit-btn { margin-left: 6px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 3px; border: 1px solid #cfe0f5; border-radius: 4px; color: #1857b7; background: #eef6ff; font-size: 10px; cursor: pointer; }
 .teacher-note-edit-btn:hover { background: #dcecff; }
 .node-teacher-note summary { display: flex; align-items: center; }
+
+/* 大纲列顶部「导入课程设计」大按钮 */
+.outline-import-btn { margin-left: 6px; min-width: 32px; height: 26px; padding: 0 8px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid #246dde; border-radius: 5px; color: #fff; background: #246dde; font-size: 11px; cursor: pointer; }
+.outline-import-btn:hover { background: #1e5cc0; border-color: #1e5cc0; }
+.outline-panel > header { flex-wrap: wrap; }
+.outline-panel > header select { max-width: 170px; }
+
+/* 导入前解析进度对话框 */
+.import-parse-progress { width: min(560px, calc(100vw - 40px)); }
+.import-parse-progress > header > div { color: #246dde; }
+.import-parse-progress > header strong { font-size: 14px; }
+.import-parse-progress > header small { color: #718399; font-size: 11.5px; }
+.import-parse-body { padding: 14px 15px; display: grid; gap: 8px; max-height: 320px; overflow: auto; }
+.import-parse-row { display: grid; grid-template-columns: minmax(0,1fr) 140px 54px; align-items: center; gap: 8px; }
+.import-parse-name { overflow: hidden; color: #40546d; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.import-parse-track { height: 6px; overflow: hidden; border-radius: 3px; background: #e5edf6; }
+.import-parse-fill { height: 100%; display: block; border-radius: inherit; background: #246dde; transition: width 250ms ease; }
+.import-parse-fill.is-done { background: #0b8961; }
+.import-parse-fill.is-failed { background: #b4453b; }
+.import-parse-row > em { color: #60758d; font-size: 11px; font-style: normal; text-align: right; }
+.import-parse-hint { color: #65788f; font-size: 11px; }
+.import-parse-flag { display: inline-block; margin-top: 2px; padding: 1px 5px; border: 1px solid #efc7c1; border-radius: 3px; color: #a84825; background: #fff4f2; font-size: 10px; }
+

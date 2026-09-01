@@ -570,3 +570,58 @@ PDF 生成为 CPU 密集同步调用，用 `asyncio.to_thread` 避免阻塞事�
 ---
 
 *最后更新：2026-08-11*
+
+---
+
+## 2026-08-30 — 资料单元 ↔ 课程设计 数据衔接（落地）
+
+- **导入前解析检查**：`POST /api/material-units/{id}/import-precheck` 报告每份材料的 `parse_status`，未完整提取的材料被标 `needs_parse`；前端据此触发后台解析（`/parse-tasks` 并发 2），进度条逐份展示，解析完成并持久化后再真正创建课程设计，杜绝进入课程设计后才"二次解析"。
+- **教学补充/教学大纲落进设计**：`CourseDesignKnowledgeNode` 扩字段 `description / teacher_note / evidence`，`_resolve_knowledge_outline` 整节点保留进 `source_snapshot.knowledge_nodes`；`assembly_sources` 新增 `outline:{id}:note` 来源，把资料单元生成的 AI 教学补充作为可插入块（默认 target=postscript）进入内容编排。
+- **大纲版本快照 + 升级徽标**：课程设计钉住 `material_unit_id + knowledge_outline_id + knowledge_outline_version`，不再每轮漂移；`GET /course-designs/{id}` 返回 `outline_has_newer_version / outline_latest_version`，`POST /course-designs/{id}/rebind` 显式升级到最新版（version+1，保留 `_versions` 历史），解除旧版 409 锁。
+- **材料预览默认进「提取文本」模式**：从资料单元导入的课程设计进 `DocumentPreviewWorkspace` 时默认 `defaultView='text'`（不再渲染原始 PDF），教师直接看到 OCR/解析后的正文。
+- **导入体验优化**：删除底部"导入课程设计"按钮，顶部统一入口；默认不选全部材料，自动选「知识范围」里已勾选教材节点反查出的材料（无选中时回退到第一本教材），并指定主教材。
+
+## 2026-08-30 — 资料单元 UI 专项优化
+
+- **大纲版本历史列表管理**：右侧大纲面板 header 加「🕘 版本历史」按钮 → 弹窗列出所有版本（v1/v2/v3，状态/节点数/时间），可查看/单个删除/删除全部旧版（被课程设计引用受保护，409）。复用后端 `delete_outline_version` 的引用保护。
+- **图谱导入统一管理（图谱=源头）**：教学补充 = 大纲节点自由文本；图谱节点 = 教材研读独立知识单元；导入 = 图谱内容复制进 `teacher_note` + `evidence` 加 `graph:{id}`；取消导入 = 删块 + 删 evidence。后端 `GET /graph-nodes/{node_id}/outline-imports` 反查所有导入位置。
+  - 修取消导入的"逆序删"bug：原 `find(startsWith('graph:'))` 只取第一个 → 改为遍历所有 graph evidence，每个图谱一个独立按钮。
+  - 修 unlink 的"匹配不到"bug：原按 outline_id 取最新版本（图谱节点可能只在 v4）→ 改为 `outline_id + node_id` 精确匹配含该节点版本。
+- **教师提示词生成教学补充（对话框式）**：节点「📖 教学补充」→ 对话框 → 输入提示词（如"补充 C 语言相关知识点"）→ dsh 读该节点+整个大纲结构生成四段（##主题/##要点/##教学建议/##引用原文）→ 预览可编辑 → 同意导入就地保存。后端 `POST /knowledge-outlines/{oid}/nodes/{nid}/teacher-note` 生成候选不回写 + `PUT` 就地更新当前版本 `teacher_note`（不新建版本）。教学补充不再被图谱插入污染。
+- **资料单元三列可拖动调宽**：分隔条用 flex 子元素不占列；CSS 变量驱动列宽，方向：拖分隔条向右 → 右侧变窄（分隔条跟随鼠标）；side 200-450px，outline 320-640px，main min 480px。`grid+绝对定位[data-split=0]` 跑屏幕外 (-4) 的坑已改用 flex 修掉。
+
+## 2026-08-30 — dsh agent 化（B 方案：多轮记忆 + 自主迭代）
+
+- **桥协议 v0.3.2**：`scripts/dsh_agent_bridge.py` 新增 `agent_run` 方法——同一 `session_id` 做 N 轮自主迭代，第 1 轮完整执行，第 2..N 轮把"上一轮 final_response + round_focus"作为新 prompt。复用 session 让 dsh 多轮记忆（桥内串起，原 dsh_engine 每次换 `uuid.uuid4()` 是浪费）。`iterations` 桥端 clamp 到 1-5。
+- **`ModelClient.agent_iterate` 接口暴露**：dsh provider 走 `engine.agent_run`，非 dsh（mock/openai_compatible）退化为单次 `generate`。`generate_json` 仍保留。
+- **`content_analysis` 接入**：单次 `generate_json` 改为 dsh 下的 2 轮 `agent_iterate`，round_focus 强约束"末轮必须是完整合法 JSON 且不要代码块包裹"。末轮用平台 `_extract_json_text` 纯函数提取（不二次调模型），提取失败时回退 `generate_json` 重试兜底。
+- **真实教材 A/B 对比**（python 第1章，11132 字 + 大纲 v5）：2 轮迭代产出 11 个成体系知识点（含【概述】/【应用】/【版本演进】式前缀），单次 9 个散点。迭代核心价值是**结构化主线 + 自查补全**，而非数量堆叠。
+- **修复 `_extract_json_text` 偶发失败**：minimax 末轮输出偶尔带说明+代码块，`_balanced_object` 第一个 `{` 配平对象 `json.loads` 失败即抛 → 兜底 `analysis={}` → 下游空 dict 让 run 失败。修复：提取失败自动 `generate_json` 重试，日志打末轮原始输出前 300 字便于诊断。
+
+## 2026-08-30 — "看不到生成过程" 三 bug 串联修复
+
+- **Bug 1：uvicorn Win+reload 强 Selector loop → dsh 桥 `NotImplementedError`**
+  - 根因：`uvicorn/loops/asyncio.py` 的 `asyncio_setup(use_subprocess=True)` 在 win+reload 时强制 `WindowsSelectorEventLoopPolicy`，而 `asyncio.create_subprocess_exec` 只在 Proactor loop 上支持 → dsh 桥 spawn 失败 → run 卡在 content_analysis、error 字段为空。
+  - 铁证：reload 后端 0/3 跑通；非 reload 后端 2/2 跑通到 finalize。
+  - **根治**：`backend/workflows/dsh_engine.py` 给桥子进程配**常驻独立 Proactor loop（后台线程）**，与主 app loop 解耦。`generate/agent_run/ensure_started/close` 全部委托 `_run_on_loop`（用 `run_coroutine_threadsafe + wrap_future` 避免跨 loop future 错误）。任何启动方式（reload/非 reload）都能跑通。
+- **Bug 2：App.tsx 第 490 行 useEffect 误清 `selectedRunId`（闪一下消失）**
+  - 根因：`if (activeDesign && !activeDesign.run_id && selectedRunId) setSelectedRunId(null)`——所有 design 的 run_id 默认为 None，用户主动点选历史 run 立即被清理。
+  - 修复：新增 `userSelectedRunRef`，`selectRun` 时置位，清理 effect 尊重"用户主动选择"。
+- **Bug 3：`content_analysis` JSON 提取偶发失败**：见上一节。
+- **前端"生成过程日志"面板**：`messages=0` 的等待空态改为实时过程日志——从 events 解析 `node.started / node.completed / run.heartbeat`，生成"后端在做什么"的时间线（最多 12 条，节点标签 + 文案 + 时间戳 + 状态色），不再显示"正在建立第一份分析结果"一句话让用户误以为卡死。
+
+## 2026-08-30 — 课程设计迁移到 minimax-m3 已知要点
+
+- 切到 `minimax-m3` 后端默认模型后，`content_analysis` 在 minimax 的 JSON 输出稳定性比 deepseek-v4-flash 略低（末轮偶发说明+代码块包裹），已用 round_focus 强约束+ `generate_json` 重试兜底。`minimax-m3` token plan 限流时（429）由桥的 `translate_error` 返回"模型额度不足（429 限流）"，前端展示为明确提示。
+- `dsh_engine.agent_iterate(iterations=2)` 在 minimax 上比 deepseek 慢约 2-3 倍（约 60-90 秒一轮），生成过程视图的 heartbeat 让等待可观察。
+
+## 2026-08-30 — 测试与系统验证
+
+- 后端全量回归 `232 passed`，4 个 PDF/OCR 环境相关测试 deselected（需真实引擎）。新增 6 个 dsh agent 化相关测试（教学补充携带 / rebind 升级 / 版本检测×2 / rebind API / precheck）。
+- 真实数据端到端验证：用 python 资料单元的 3 份已解析材料 + 大纲 v5 跑通到 finalize（30 事件，含 11 次 heartbeat、7 个节点 start、6 个节点 complete）。
+- 前端 tsc ✓、vite build ✓（仅预存的 `.mu-split` CSS 警告）。
+
+---
+
+*最后更新：2026-08-30*
+

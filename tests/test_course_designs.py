@@ -15,6 +15,7 @@ from backend.course_designs.service import (
     build_docx,
     create_design,
     inspect_docx_template,
+    rebind_design,
     reference_detail,
     restore_source_snapshot,
     sync_run,
@@ -727,6 +728,117 @@ def test_sync_run_api_rejects_unfinished_session(monkeypatch, tmp_path: Path) ->
 
     assert response.status_code == 409
     assert "尚未完成" in response.json()["detail"]
+
+
+def test_knowledge_outline_carries_teacher_note_into_snapshot_and_assembly() -> None:
+    """教学补充(teacher_note)必须从大纲带进课程设计，可在内容组装配为可插入来源。"""
+    outline = knowledge_outline()
+    outline["knowledge_nodes"][0]["teacher_note"] = "补充：敏感元件是传感器的核心，需结合案例讲解。"
+    outline["knowledge_nodes"][0]["description"] = "定义、组成与性能概述。"
+    outline["knowledge_nodes"][0]["evidence"] = [{"source_type": "textbook", "material_id": "source-1", "quote": "传感器由敏感元件组成"}]
+
+    record = create_design(archive_record(), outline_payload(), outline)
+    node = record["source_snapshot"]["knowledge_nodes"][0]
+    assert node["teacher_note"] == "补充：敏感元件是传感器的核心，需结合案例讲解。"
+    assert node["description"] == "定义、组成与性能概述。"
+    assert len(node["evidence"]) == 1
+
+    sources = assembly_sources(record)
+    note_source = next(item for item in sources if item["kind"] == "knowledge_outline" and item["locator"].endswith(":note"))
+    assert "敏感元件" in note_source["content"]
+    assert note_source["default_target"] == "postscript"
+
+
+def test_rebind_upgrades_to_latest_outline_version_snapshot() -> None:
+    """rebind_design 应重绑定到最新版大纲：更新 version、知识点、重难点与来源引用。"""
+    record = create_design(archive_record(), outline_payload(version=1), knowledge_outline(1))
+    newest = knowledge_outline(3)
+    newest["knowledge_nodes"] = [
+        {"title": "传感器定义（新版）", "level": 1, "is_key_point": True, "is_difficult_point": False},
+        {"title": "传感器性能指标（新版）", "level": 2, "is_key_point": False, "is_difficult_point": True},
+    ]
+    updated = rebind_design(record, newest, archive_record())
+
+    assert updated["knowledge_outline_version"] == 3
+    assert updated["version"] == 2
+    assert updated["content"]["knowledge_points"] == ["传感器定义（新版）", "传感器性能指标（新版）"]
+    assert updated["content"]["key_points"] == ["传感器定义（新版）"]
+    assert updated["content"]["difficult_points"] == ["传感器性能指标（新版）"]
+    assert [item["version"] for item in updated["_versions"]] == [1, 2]
+    latest_locator = next(item for item in updated["source_references"] if item["locator"].startswith("material-unit:"))
+    assert latest_locator["locator"].endswith(":v3")
+    assert not any(item["locator"].endswith(":v1") for item in updated["source_references"])
+
+
+def test_has_newer_version_detection(monkeypatch) -> None:
+    """_attach_outline_status 应在大纲有更新版本时标记 outline_has_newer_version。"""
+    import asyncio
+    record = create_design(archive_record(), outline_payload(version=1), knowledge_outline(1))
+    unit = {
+        "id": MATERIAL_UNIT_ID,
+        "archive_id": archive_record()["id"],
+        "knowledge_outlines": [knowledge_outline(1), knowledge_outline(2), knowledge_outline(3)],
+    }
+    monkeypatch.setattr(course_design_router, "load_material_unit", lambda _root, _id: unit)
+
+    noted = asyncio.run(course_design_router._attach_outline_status(record))
+
+    assert noted["outline_has_newer_version"] is True
+    assert noted["outline_latest_version"] == 3
+    assert noted["knowledge_outline_version"] == 1
+
+
+def test_no_newer_version_when_latest(monkeypatch) -> None:
+    """当前已是最新版时不标记有更新。"""
+    import asyncio
+    record = create_design(archive_record(), outline_payload(version=3), knowledge_outline(3))
+    unit = {
+        "id": MATERIAL_UNIT_ID,
+        "archive_id": archive_record()["id"],
+        "knowledge_outlines": [knowledge_outline(2), knowledge_outline(3)],
+    }
+    monkeypatch.setattr(course_design_router, "load_material_unit", lambda _root, _id: unit)
+
+    noted = asyncio.run(course_design_router._attach_outline_status(record))
+
+    assert noted["outline_has_newer_version"] is False
+    assert noted["outline_latest_version"] == 3
+
+
+def test_rebind_api_returns_updated_design(monkeypatch, tmp_path: Path) -> None:
+    """/rebind 端点应将课程设计升级到最新版大纲并保存。"""
+    record = create_design(archive_record(), outline_payload(version=1), knowledge_outline(1))
+    record["material_unit_id"] = MATERIAL_UNIT_ID
+    save_design(tmp_path / "designs", record)
+    newest = knowledge_outline(3)
+    unit = {
+        "id": MATERIAL_UNIT_ID,
+        "archive_id": archive_record()["id"],
+        "knowledge_outlines": [knowledge_outline(1), newest],
+    }
+    monkeypatch.setattr(course_design_router, "load_design", lambda _store, _id: load_design(tmp_path / "designs", _id))
+    monkeypatch.setattr(course_design_router, "load_archive", lambda _root, _id: archive_record())
+    monkeypatch.setattr(course_design_router, "load_material_unit", lambda _root, _id: unit)
+    monkeypatch.setattr(course_design_router, "save_design", lambda _store, rec: save_design(tmp_path / "designs", rec))
+    monkeypatch.setattr(
+        course_design_router, "get_settings",
+        lambda: SimpleNamespace(
+            course_design_store_path=tmp_path / "designs",
+            course_archive_store_path=tmp_path / "archives",
+            material_unit_store_path=tmp_path / "units",
+        ),
+    )
+    api = FastAPI()
+    api.include_router(course_design_router.router)
+
+    response = TestClient(api).post(f"/api/course-designs/{record['id']}/rebind")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["knowledge_outline_version"] == 3
+    assert body["version"] == 2
+    assert body["outline_has_newer_version"] is False
+    assert body["outline_latest_version"] == 3
 
 
 def test_assembly_sources_api_restores_legacy_outline(monkeypatch, tmp_path: Path) -> None:

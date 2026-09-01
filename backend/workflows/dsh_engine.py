@@ -10,8 +10,11 @@ import json
 import logging
 import os
 import subprocess
+import sys
+import threading
 import uuid
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("multi_agent_platform.dsh_engine")
 
@@ -25,7 +28,13 @@ class DshEngineError(RuntimeError):
 
 
 class DshAgentEngine:
-    """管理一个 stdio 桥子进程, 提供 generate 能力(仅依赖文本输入/输出)。"""
+    """管理一个 stdio 桥子进程, 提供 generate 能力(仅依赖文本输入/输出)。
+
+    桥子进程及其全部 I/O 跑在一个**常驻的独立 ProactorEventLoop(后台线程)**上,
+    与主 app 的 event loop 类型解耦。这样 uvicorn 即便在 Win+reload 下强制 Selector loop
+    (不支持 asyncio.create_subprocess_exec) 也能正常 spawn 桥 —— 避免 NotImplementedError
+    导致 run 在 content_analysis 节点失败、前端看不到生成过程。
+    """
 
     def __init__(
         self,
@@ -47,13 +56,45 @@ class DshAgentEngine:
         self._stderr_task: asyncio.Task | None = None
         self._stderr_lines: list[str] = []
         self._lock = asyncio.Lock()
+        # 常驻独立 Proactor loop 线程: 桥的所有 subprocess + I/O 都在它上面跑, 与主 loop 无关。
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._thread_started = False
+
+    def _ensure_loop_thread(self) -> asyncio.AbstractEventLoop:
+        """懒启动后台线程, 在它上面建一个 Proactor loop(Windows)。返回该 loop。"""
+        if self._loop is not None and self._loop.is_running():
+            return self._loop
+        if sys.platform == "win32":
+            # 只有 Proactor loop 支持 create_subprocess_exec; 与主 app loop 类型解耦
+            self._loop = asyncio.ProactorEventLoop()
+        else:
+            self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._run_loop, name="dsh-agent-loop", daemon=True)
+        self._thread.start()
+        self._thread_started = True
+        return self._loop
+
+    def _run_loop(self) -> None:
+        assert self._loop is not None
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+    async def _run_on_loop(self, coro: Any, timeout: float) -> Any:
+        """把协程投递到独立 loop 线程执行, 在主 loop 上等待, 不跨 loop 传 future(避免 wrong-loop 错误)。"""
+        loop = self._ensure_loop_thread()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return await asyncio.wait_for(asyncio.wrap_future(future), timeout=timeout)
 
     @property
     def default_model(self) -> str:
         return self._default_model
 
     async def ensure_started(self) -> None:
-        """懒启动桥子进程。(并发安全)"""
+        """懒启动桥子进程。(并发安全) 在独立 loop 线程上执行。"""
+        await self._run_on_loop(self._ensure_started_internal(), timeout=30)
+
+    async def _ensure_started_internal(self) -> None:
         async with self._lock:
             if self._proc is not None and self._proc.returncode is None:
                 return
@@ -156,6 +197,9 @@ class DshAgentEngine:
 
     async def generate(self, system_prompt: str, user_prompt: str, model: str | None = None) -> str:
         """一次智能体调用: 返回最终响应文本。模型不同时桥会重建 harness(换 provider/model)。"""
+        return await self._run_on_loop(self._generate_internal(system_prompt, user_prompt, model), timeout=300)
+
+    async def _generate_internal(self, system_prompt: str, user_prompt: str, model: str | None) -> str:
         msg = await self._send({
             "method": "generate",
             "params": {
@@ -173,7 +217,69 @@ class DshAgentEngine:
             raise DshEngineError(str(raw).strip())
         return str(msg.get("final_response") or "")
 
+    async def agent_run(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        iterations: int = 2,
+        model: str | None = None,
+        session_id: str | None = None,
+        round_focus: str | None = None,
+        timeout: float = 600.0,
+    ) -> dict:
+        """多轮自主迭代(复用 session 保记忆): 每轮基于上一轮产出修订, 越迭代越收敛。
+
+        - 复用 session_id(不换新) → dsh 多轮记忆, 记住各轮上下文。
+        - iterations 控制迭代轮数(桥端 clamp 到 1-5)。
+        - return {"final_response", "iterations", "turns"} 或可在调用方重建 prompt 的 raw 迭代。
+        """
+        return await self._run_on_loop(
+            self._agent_run_internal(system_prompt, user_prompt, iterations, model, session_id, round_focus, timeout),
+            timeout=timeout,
+        )
+
+    async def _agent_run_internal(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        iterations: int,
+        model: str | None,
+        session_id: str | None,
+        round_focus: str | None,
+        timeout: float,
+    ) -> dict:
+        msg = await self._send({
+            "method": "agent_run",
+            "params": {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "session_id": session_id or str(uuid.uuid4()),
+                "model": model or self._default_model,
+                "iterations": max(1, min(int(iterations), 5)),
+                "round_focus": round_focus or "请把上一版成果规范化、补全遗漏、修正疏漏，并给出更完整、更可用的最终版。",
+            },
+        }, timeout=timeout)
+        if not msg.get("ok"):
+            raise DshEngineError(str(msg.get("error") or "unknown dsh error") + f"\n{self._stderr_tail()}")
+        if msg.get("finish_reason") == "error":
+            raw = msg.get("error") or self._stderr_tail() or "dsh agent_run finished with error"
+            raise DshEngineError(str(raw).strip())
+        return {
+            "final_response": str(msg.get("final_response") or ""),
+            "iterations": int(msg.get("iterations") or 0),
+            "turns": msg.get("turns") or [],
+        }
+
+    async def _run_on_loop(self, coro: Any, timeout: float) -> Any:
+        """把协程投递到独立 loop 线程执行, 在主 loop 上等待, 不跨 loop 传 future(避免 wrong-loop 错误)。"""
+        loop = self._ensure_loop_thread()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return await asyncio.wait_for(asyncio.wrap_future(future), timeout=timeout)
+
     async def close(self) -> None:
+        await self._run_on_loop(self._close_internal(), timeout=10)
+
+    async def _close_internal(self) -> None:
         proc = self._proc
         if proc is None:
             return

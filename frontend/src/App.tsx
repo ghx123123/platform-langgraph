@@ -351,6 +351,8 @@ function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const indexedSourceFiles = useRef<Map<string, File>>(new Map());
   const hydratedDesignId = useRef<string | null>(null);
+  // 用户主动点击会话时置位, 让"activeDesign 未绑定 run 则清掉选择"的 effect 不误清用户的主动选择
+  const userSelectedRunRef = useRef<string | null>(null);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [parsedDoc, setParsedDoc] = useState<ParsedDocument | null>(null);
@@ -487,7 +489,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (activeDesign && !activeDesign.run_id && selectedRunId) setSelectedRunId(null);
+    // 仅当"用户没有主动点选会话"时, 才把 activeDesign 未绑定的残留 run 选择清掉;
+    // 否则会误清用户刚点击的历史会话(design_id 与 activeDesign 不绑定也属正常)。
+    if (activeDesign && !activeDesign.run_id && selectedRunId && userSelectedRunRef.current !== selectedRunId) setSelectedRunId(null);
   }, [activeDesign, selectedRunId]);
 
   useEffect(() => {
@@ -601,7 +605,9 @@ function App() {
       processedCharacterCount: parsedDoc.processed_character_count,
       isTruncated: parsedDoc.is_truncated,
       analysis: undefined,
-      scope,
+      defaultView: (activeDesign?.knowledge_outline_id ? 'text' : 'original') as 'text' | 'original',
+      knowledge_outline_nodes: (activeDesign?.source_snapshot?.knowledge_nodes || []) as unknown as import('./types/workflow').MaterialUnitKnowledgeNode[],
+      knowledge_outline_version: activeDesign?.knowledge_outline_version,
       onVisualEvidenceChange: setVisualEvidence,
     };
     if (selectedRun && teaching.document_text) return {
@@ -618,7 +624,7 @@ function App() {
       scope: teaching.scope,
     };
     return null;
-  }, [parsedDoc, scope, selectedRun, teaching]);
+  }, [parsedDoc, scope, selectedRun, teaching, activeDesign]);
 
   const parseFile = async (file: File) => {
     setUploadFileName(file.name); setUploading(true); setError(null); setVisualEvidence([]);
@@ -794,6 +800,10 @@ function App() {
       const enrichedContext = [baseContext, visualContext].filter(Boolean).join('\n\n');
       const run = await workflowApi.createRun({ title: title.trim(), archive_id: activeDesign?.archive_id, design_id: activeDesign?.id, document_id: parsedDoc.document_id, document_name: parsedDoc.file_name, document_text: parsedDoc.raw_text, document_sections: parsedDoc.sections || [], extraction_report: parsedDoc.extraction_report, knowledge_points: editedPoints, max_iterations: iterations, context: enrichedContext, template_id: 'teaching_design', interventions, scope });
       setRuns((current) => [run, ...current]); setSelectedRunId(run.id); setParsedDoc(null); setTitle(''); setContext('');
+      // 把新 run 绑定到当前课程设计, 使 run_id 非空:
+      // 否则第 490 行的"清空未绑定 run"effect 会把刚选中的新 run 误清, 导致生成过程空白。
+      setActiveDesign((current) => current ? { ...current, run_id: run.id } : current);
+      setDesigns((current) => current.map((item) => item.id === activeDesign?.id ? { ...item, run_id: run.id } : item));
       setWorkspaceView('process');
       navigateStage('design');
     } catch (reason) { setError(getErrorMessage(reason)); }
@@ -840,6 +850,7 @@ function App() {
     setError(null);
   }, []);
   const selectRun = useCallback((runId: string) => {
+    userSelectedRunRef.current = runId;
     setSelectedRunId(runId);
     setWorkspaceView('process');
     navigateStage('design');
@@ -859,6 +870,26 @@ function App() {
   const activePhase = liveNode;
   const completedNodes = new Set(events.filter((event) => ['node.completed', 'review.completed'].includes(event.event_type)).map((event) => event.node));
   const displayRunStatus = selectedRun?.status === 'queued' && events.some((event) => event.event_type === 'node.started') ? 'running' : selectedRun?.status;
+
+  // 生成过程日志: 把 node.started/completed/run.heartbeat 解析成"后端在做什么"的时间线, 供等待空态展示。
+  const processLogEntries = useMemo(() => {
+    const logs: Array<{ sequence: number; node: string; message: string; time: string; completed: boolean; kind: 'start' | 'heartbeat' | 'done' }> = [];
+    const nodeLabels: Record<string, string> = {
+      content_analysis: '内容剖析', teaching_design: '教学设计', teach_knowledge: '教师讲授',
+      student_question: '学生提问', teacher_answer: '教师答疑', supervisor_comment: '督导点评', finalize: '成果汇总',
+    };
+    events.forEach((event) => {
+      if (event.event_type === 'node.started' && event.node) {
+        logs.push({ sequence: event.sequence, node: event.node, message: event.message || `开始${nodeLabels[event.node] || event.node}`, time: new Date(event.created_at).toLocaleTimeString('zh-CN', { hour12: false }), completed: false, kind: 'start' });
+      } else if (event.event_type === 'node.completed' || event.event_type === 'review.completed') {
+        if (event.node) logs.push({ sequence: event.sequence, node: event.node, message: `完成${nodeLabels[event.node] || event.node}`, time: new Date(event.created_at).toLocaleTimeString('zh-CN', { hour12: false }), completed: true, kind: 'done' });
+      } else if (event.event_type === 'run.heartbeat' && event.node) {
+        logs.push({ sequence: event.sequence, node: event.node, message: event.message || '智能体仍在处理当前任务', time: new Date(event.created_at).toLocaleTimeString('zh-CN', { hour12: false }), completed: false, kind: 'heartbeat' });
+      }
+    });
+    return logs.slice(-12);
+  }, [events]);
+
 
   /** 运行中时，把当前节点翻译成"谁在做什么"，让等待过程可解释 */
   const activeAgent = useMemo(() => {
@@ -1049,7 +1080,9 @@ function App() {
           </div>
 
           {workspaceView === 'material' ? (
-            previewDocument ? <DocumentPreviewWorkspace {...previewDocument} /> : <WelcomePanel onUpload={openFilePicker} onDemo={loadDemo} />
+            previewDocument ? <DocumentPreviewWorkspace {...previewDocument} /> : activeDesign ? (
+              <div className="empty-state tall"><FileCheck2 size={22} /><strong>材料预览正在加载</strong><span>已导入知识大纲 v{activeDesign.knowledge_outline_version || 1}，正在准备 {activeDesign.material_ids.length} 份已解析材料的正文预览…</span></div>
+            ) : <WelcomePanel onUpload={openFilePicker} onDemo={loadDemo} />
           ) : workspaceView === 'result' ? (
             <div className="full-result-view"><ResultPanel run={selectedRun} onExport={exportReport} onError={setError} /></div>
           ) : (
@@ -1057,12 +1090,19 @@ function App() {
               <div className="phase-rail">{phases.map((phase, index) => { const active = activePhase === phase.key; const done = completedNodes.has(phase.key) || selectedRun?.status === 'completed'; return <div key={phase.key} className={`phase-step ${active ? 'active' : ''} ${done ? 'done' : ''}`}><span>{done ? <CheckCircle2 size={14} /> : index + 1}</span><div><strong>{phase.name}</strong><small>{phase.short}</small></div></div>; })}</div>
               {selectedRun && messages.length > 0 && <div className="process-explorer"><div className="process-explorer-label"><ScanSearch size={14} /><span>局部查看</span><small>从全局流程定位到单轮内容</small></div><div className="round-switch" role="tablist" aria-label="教学轮次">{messageGroups.map((group) => { const active = messageView !== 'all' && group.iteration === (messageView === 'latest' ? latestIteration : messageView); return <button type="button" key={group.iteration} className={active ? 'active' : ''} onClick={() => setMessageView(group.iteration)}>{group.iteration === 0 ? '教学准备' : `第 ${group.iteration} 轮`}</button>; })}<button type="button" className={messageView === 'all' ? 'active' : ''} onClick={() => setMessageView('all')}>完整记录</button></div><button type="button" className={`insight-toggle ${detailPanelOpen ? 'active' : ''}`} onClick={() => setDetailPanelOpen((value) => !value)} aria-pressed={detailPanelOpen}>{detailPanelOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}课程洞察</button></div>}
                <div className="classroom-stream" aria-live="polite">
-                 {!selectedRun ? (parsedDoc ? (
+                 {!selectedRun ? (activeDesign ? (
+                   <div className="empty-state tall"><FileCheck2 size={22} /><strong>课程设计已就绪</strong><span>已导入知识大纲 v{activeDesign.knowledge_outline_version || 1} 与 {activeDesign.material_ids.length} 份已解析材料，引用 {activeDesign.source_references.length} 条上游数据。请在左侧完善课程标题并选择知识点，点击「启动教学设计」开始智能体生成。</span></div>
+                 ) : parsedDoc ? (
                    <div className="empty-state tall"><FileCheck2 size={22} /><strong>课程材料已就绪</strong><span>可切换到“材料预览”检查原文，再从左侧启动教学设计。</span></div>
                  ) : (
                    <WelcomePanel onUpload={openFilePicker} onDemo={loadDemo} />
                  )) : messages.length === 0 ? (
-                   <div className="empty-state process-waiting"><Loader2 className={selectedRun.status === 'running' ? 'spin' : ''} size={22} /><strong>正在建立第一份分析结果</strong><span>顶部状态区会持续显示当前任务、耗时和后端心跳。</span></div>
+                   <div className="empty-state process-waiting process-log">
+                     <div className="process-log-head"><Loader2 className={selectedRun.status === 'running' ? 'spin' : ''} size={22} /><div><strong>正在建立第一份分析结果</strong><span>{selectedRun.status === 'failed' ? `运行失败：${selectedRun.error || '模型未返回可解析结果'}` : '当前节点正在用 dsh 智能体处理，请稍候'}</span></div></div>
+                     {selectedRun.status === 'running' || selectedRun.status === 'queued' ? (
+                       <div className="process-log-list">{processLogEntries.length ? processLogEntries.map((entry, index) => <div key={`${entry.sequence}-${index}`} className="process-log-row"><i className={entry.completed ? 'done' : entry.kind} /><span>{entry.message || entry.node}<small>{entry.time}</small></span></div>) : <div className="process-log-row waiting"><i className="waiting" /><span>等待后端心跳，正在连接实时进度…<small>首次响应通常需要几十秒</small></span></div>}</div>
+                     ) : null}
+                   </div>
                  ) : (
                    <section className="collaboration-board" aria-label="教师、学生与督导协作过程">
                       {agentColumnDetails.map((column) => <AgentColumn key={column.type} {...column} groups={messagesByAgent[column.type]} activeAgent={activeAgent} reviews={reviewsByIteration} />)}

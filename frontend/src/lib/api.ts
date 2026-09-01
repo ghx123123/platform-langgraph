@@ -144,6 +144,7 @@ export const courseArchiveApi = {
 export const courseDesignApi = {
   list: () => request<{ items: CourseDesignSummary[] }>('/course-designs'),
   get: (designId: string) => request<CourseDesignRecord>(`/course-designs/${designId}`),
+  rebind: (designId: string) => request<CourseDesignRecord>(`/course-designs/${designId}/rebind`, { method: 'POST' }),
   create: (input: PrepareArchiveInput & { archive_id: string; material_unit_id?: string; knowledge_outline_id?: string; knowledge_outline_version?: number }) =>
     request<CourseDesignRecord>('/course-designs', { method: 'POST', body: JSON.stringify(input) }),
   update: (designId: string, content: CourseDesignContent, status: CourseDesignStatus, base_version: number, template_document_id?: string | null, template_material_id?: string | null) =>
@@ -204,6 +205,8 @@ export const materialUnitApi = {
     request<{ task_id: string; status: string; progress: number; engine: string; materials: Array<{ id: string; name: string; status: string; progress: number; message: string }> }>(`/material-units/${unitId}/parse-tasks/${taskId}`),
   fileText: (unitId: string, materialId: string) =>
     request<{ ok: boolean; material_id: string; character_count: number; text: string; pages?: Array<{ page: number; text: string }> }>(`/material-units/${unitId}/files/${materialId}/text`),
+  importPrecheck: (unitId: string, materialIds: string[]) =>
+    request<{ all_parsed: boolean; needs_parse: Array<{ material_id: string; name: string; parse_status: string; parse_message: string; needs_parse: boolean }>; items: Array<{ material_id: string; name: string; parse_status: string; parse_message: string; needs_parse: boolean }> }>(`/material-units/${unitId}/import-precheck`, { method: 'POST', body: JSON.stringify({ material_ids: materialIds }) }),
   reparseFile: (unitId: string, materialId: string, engine: string) =>
     request<{ task_id: string; status: string; engine: string }>(`/material-units/${unitId}/files/${materialId}/reparse`, { method: 'POST', body: JSON.stringify({ engine }) }),
   scopeOptions: (unitId: string) => request<import('../types/workflow').MaterialUnitScopeOptions>(`/material-units/${unitId}/scope-options`),

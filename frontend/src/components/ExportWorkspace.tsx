@@ -76,7 +76,7 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
   const [inspection, setInspection] = useState<CourseDesignTemplateInspection | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [exports, setExports] = useState<CourseDesignExportRecord[]>(design?.exports || []);
-  const [busy, setBusy] = useState<'save' | 'sync' | 'template' | 'export' | 'source' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'sync' | 'template' | 'export' | 'source' | 'rebind' | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -258,6 +258,17 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
     } catch (reason) { setError(getErrorMessage(reason)); }
   };
 
+  const rebindOutline = async () => {
+    if (!design || !window.confirm(`确认把本课程设计升级到知识大纲最新版（v${design.outline_latest_version}）？教案内容与应用的重难点、知识点、讲次范围会按新版大纲重新生成一个版本。`)) return;
+    setError(''); setMessage(''); setBusy('rebind');
+    try {
+      const updated = await courseDesignApi.rebind(design.id);
+      onUpdated(updated);
+      setMessage(`已升级到知识大纲 v${updated.outline_latest_version || updated.knowledge_outline_version}，并保存为第 ${updated.version} 版。`);
+    } catch (reason) { setError(getErrorMessage(reason)); }
+    finally { setBusy(null); }
+  };
+
   if (loading) return <div className="export-empty"><Loader2 className="spin" /><strong>正在读取课程设计稿</strong></div>;
   if (!design || !content) return (
     <main className="export-empty"><FileOutput size={28} /><h2>还没有可编辑的课程设计稿</h2><p>先在资料整理页确认章节、讲次、主材料和配套材料，系统会建立带来源引用的课程设计记录。</p><button className="primary-button compact" type="button" onClick={onGoMaterials}>前往资料整理</button></main>
@@ -267,7 +278,8 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
     <main className="export-workspace">
       <header className="export-header">
         <div><span>成果中心 · 教案定稿</span><h1>编辑并导出结构化教案</h1><p>当前稿的每个上游来源均可回到原始文件或提取正文。</p></div>
-        <div className="export-actions"><button type="button" className="secondary-button" onClick={() => void save()} disabled={!!busy}><Save size={15} />保存版本</button><button type="button" className="primary-button compact" onClick={() => void exportDocx()} disabled={!!busy || !inspection?.compatible}>{busy === 'export' ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{busy === 'export' ? '正在生成并保存' : '导出 DOCX'}</button></div>
+        <div className="export-actions">{design.outline_has_newer_version && <div className="outline-upgrade-badge"><RefreshCw size={13} />知识大纲已更新至 v{design.outline_latest_version}<button type="button" className="outline-upgrade-btn" onClick={() => void rebindOutline()} disabled={busy==='rebind'}>{busy==='rebind' ? <Loader2 className="spin" size={13} /> : '一键升级'}</button></div>}
+          <button type="button" className="secondary-button" onClick={() => void save()} disabled={!!busy}><Save size={15} />保存版本</button><button type="button" className="primary-button compact" onClick={() => void exportDocx()} disabled={!!busy || !inspection?.compatible}>{busy === 'export' ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{busy === 'export' ? '正在生成并保存' : '导出 DOCX'}</button></div>
       </header>
       {(message || error) && <div className={`export-notice ${error ? 'error' : ''}`}>{error ? <FileText size={14} /> : <CheckCircle2 size={14} />}{error || message}</div>}
       <div className="export-columns">

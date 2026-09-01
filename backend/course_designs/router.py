@@ -18,8 +18,8 @@ from backend.course_designs.models import (
 )
 from backend.course_designs.service import (
     apply_assembly, assembly_sources, build_docx, create_design, inspect_docx_template,
-    public_record, reference_detail, restore_source_snapshot, summary, sync_run, update_design,
-    utc_now, validate_run_context,
+    public_record, rebind_design, reference_detail, restore_source_snapshot, summary, sync_run,
+    update_design, utc_now, validate_run_context,
 )
 from backend.course_designs.storage import delete_design, list_designs, load_design, save_design
 from backend.documents.storage import delete_document, original_path, persist_original
@@ -27,6 +27,36 @@ from backend.material_units.storage import load_material_unit
 
 
 router = APIRouter(prefix="/api/course-designs", tags=["course-designs"])
+
+
+async def _attach_outline_status(record: dict) -> dict:
+    """填充大纲版本状态：outline_has_newer_version / outline_latest_version。
+
+    课程设计引用某大纲版本(快照)，若该大纲之后又产生了新版本，则标记有更新，
+    前端据此显示「📌 大纲已更新至 vN」徽标 + 一键升级按钮。不写库，仅响应时计算。
+    """
+    record["outline_has_newer_version"] = False
+    record["outline_latest_version"] = None
+    if not record.get("knowledge_outline_id") or not record.get("material_unit_id"):
+        return record
+    try:
+        unit = await run_in_threadpool(
+            load_material_unit, get_settings().material_unit_store_path, record["material_unit_id"]
+        )
+    except (FileNotFoundError, ValueError):
+        return record
+    versions = [
+        int(item.get("version") or 0)
+        for item in unit.get("knowledge_outlines") or []
+        if item.get("id") == record.get("knowledge_outline_id")
+    ]
+    if not versions:
+        return record
+    latest = max(versions)
+    record["outline_latest_version"] = latest
+    current = int(record.get("knowledge_outline_version") or 0)
+    record["outline_has_newer_version"] = latest > current
+    return record
 
 
 def _not_found(exc: Exception) -> HTTPException:
@@ -170,9 +200,56 @@ async def create(payload: CourseDesignCreate) -> CourseDesignRecord:
 async def design(design_id: str) -> CourseDesignRecord:
     try:
         record = await run_in_threadpool(load_design, get_settings().course_design_store_path, design_id)
+        record = await _attach_outline_status(record)
         return CourseDesignRecord.model_validate(public_record(record))
     except (FileNotFoundError, ValueError) as exc:
         raise _not_found(exc) from exc
+
+
+@router.post("/{design_id}/rebind", response_model=CourseDesignRecord)
+async def rebind_outline(design_id: str) -> CourseDesignRecord:
+    """把课程设计重新绑定到资料单元大纲的最新版本（显式升级，不悄悄漂移）。
+
+    升级后旧版本若不再被任何课程设计引用，delete_outline_version 的 409 锁自动解除。
+    """
+    try:
+        settings = get_settings()
+        record = await run_in_threadpool(load_design, settings.course_design_store_path, design_id)
+        if not record.get("material_unit_id") or not record.get("knowledge_outline_id"):
+            raise HTTPException(status_code=422, detail="本课程设计未绑定资料单元知识大纲，无法升级")
+        archive = await run_in_threadpool(load_archive, settings.course_archive_store_path, record["archive_id"])
+        unit = await run_in_threadpool(
+            load_material_unit, settings.material_unit_store_path, record["material_unit_id"]
+        )
+        # 重新绑定用最新版本：传 version=None 让 _resolve_knowledge_outline 取 max(version)
+        payload = record_as_payload(record)
+        payload.knowledge_outline_version = None
+        outline = _resolve_knowledge_outline(payload, unit, archive)
+        if outline is None or int(outline["version"]) <= int(record.get("knowledge_outline_version") or 0):
+            raise HTTPException(status_code=409, detail="知识大纲已是当前最新版本，无需升级")
+        updated = await run_in_threadpool(rebind_design, record, outline, archive)
+        updated = await _attach_outline_status(updated)
+        await run_in_threadpool(save_design, settings.course_design_store_path, updated)
+        return CourseDesignRecord.model_validate(public_record(updated))
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def record_as_payload(record: dict) -> "CourseDesignCreate":
+    return CourseDesignCreate(
+        archive_id=record["archive_id"],
+        chapter=record.get("chapter"),
+        schedule_id=record.get("schedule_id"),
+        material_ids=record.get("material_ids") or [],
+        primary_material_id=record.get("primary_material_id"),
+        material_unit_id=record.get("material_unit_id"),
+        knowledge_outline_id=record.get("knowledge_outline_id"),
+        knowledge_outline_version=record.get("knowledge_outline_version"),
+    )
 
 
 @router.put("/{design_id}", response_model=CourseDesignRecord)

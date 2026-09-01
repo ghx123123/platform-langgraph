@@ -245,6 +245,108 @@ def create_design(archive: dict, payload: CourseDesignCreate, outline: dict | No
     }
 
 
+def rebind_design(record: dict, outline: dict | None, archive: dict) -> dict:
+    """把课程设计重新绑定到资料单元大纲的最新版本(显式升级)。
+
+    教案是交付物，不能大纲一变就悄悄改。只有教师点「一键升级」才调到本逻辑：
+    用最新版大纲重烘焙 snapshot，并更新 content 的重难点/知识点/来源引用。
+    """
+    if outline is None:
+        raise ValueError("资料单元尚未生成知识大纲，无法重新绑定")
+    record["knowledge_outline_id"] = outline["id"]
+    record["knowledge_outline_version"] = deepcopy(outline["version"])
+    outline_nodes = [
+        item for item in outline.get("knowledge_nodes") or [] if item.get("title", "").strip()
+    ]
+    outline_titles = [item["title"].strip() for item in outline_nodes]
+    content = CourseDesignContent.model_validate(record["content"])
+    content.topic = outline.get("title") or content.topic
+    content.session_label = outline.get("session") or content.session_label
+    content.knowledge_points = outline_titles[:240]
+    content.key_points = [item["title"].strip() for item in outline_nodes if item.get("is_key_point")][:12]
+    content.difficult_points = [item["title"].strip() for item in outline_nodes if item.get("is_difficult_point")][:8]
+    # 保留教师已在教案里手动改过的字段不做覆盖：只更新大纲来源应负责的知识点/重难点
+    requirements = outline.get("requirements") or []
+    requirement_values: dict[str, list[str]] = {}
+    for requirement in requirements:
+        category = str(requirement.get("category") or "knowledge")
+        value = str(requirement.get("content") or requirement.get("title") or "").strip()
+        if value and value not in requirement_values.setdefault(category, []):
+            requirement_values[category].append(value)
+    if requirement_values.get("key_point"):
+        content.key_points = list(dict.fromkeys([*requirement_values["key_point"], *content.key_points]))[:12]
+    if requirement_values.get("difficult_point"):
+        content.difficult_points = list(dict.fromkeys([*requirement_values["difficult_point"], *content.difficult_points]))[:8]
+    record["source_snapshot"] = {
+        "schedule": _schedule_snapshot(archive, outline, record.get("schedule_id")),
+        "syllabus_requirements": deepcopy(requirements),
+        "knowledge_nodes": deepcopy(outline.get("knowledge_nodes") or []),
+    }
+    # 更新 source_references 里大纲那一条的 locator：移除所有旧的 material-unit 大纲引用，替换为当前版本
+    outline_locator = (
+        f"material-unit:{record.get('material_unit_id')}:knowledge-outline:"
+        f"{outline['id']}:v{outline['version']}"
+    )
+    ref_id = _ref_id(record["id"], outline_locator)
+    record["source_references"] = [
+        item for item in record.get("source_references", [])
+        if not (
+            str(item.get("locator") or "").startswith("material-unit:")
+            and f":{outline['id']}:" in str(item.get("locator"))
+        )
+    ]
+    record["source_references"].append({
+        "id": ref_id,
+        "layer": "structured",
+        "archive_id": record["archive_id"],
+        "material_id": None,
+        "document_id": None,
+        "source_name": outline["title"],
+        "source_path": "",
+        "locator": outline_locator,
+        "sha256": None,
+        "extraction_status": "structured",
+        "character_count": sum(len(item.get("title", "")) for item in outline.get("knowledge_nodes", [])),
+        "excerpt": "、".join(item.get("title", "") for item in outline.get("knowledge_nodes", [])[:8]),
+        "original_url": None,
+        "preview_url": None,
+    })
+    # 升级 = 一次内容修订：version+1 并保留 _versions 历史，与教师手改一致，可回溯
+    record["content"] = content.model_dump()
+    next_version = record.get("version", 1) + 1
+    record["version"] = next_version
+    timestamp = utc_now()
+    record.setdefault("_versions", []).append({
+        "version": next_version,
+        "status": record.get("status", "draft"),
+        "content": content.model_dump(),
+        "template_document_id": record.get("template_document_id"),
+        "template_material_id": record.get("template_material_id"),
+        "content_insertions": deepcopy(record.get("content_insertions") or []),
+        "created_at": timestamp,
+    })
+    record["_versions"] = record["_versions"][-30:]
+    record["updated_at"] = timestamp
+    return record
+
+
+def _schedule_snapshot(archive: dict, outline: dict | None, schedule_id: str | None) -> list[dict]:
+    """重建 source_snapshot.schedule —— 与 create_design 的 selected_schedules 逻辑一致。"""
+    if not outline and not schedule_id:
+        return []
+    selected_schedule_ids = {
+        str(item_id).rsplit(":", 1)[-1]
+        for item_id in (outline or {}).get("selected_session_ids", [])
+    }
+    if schedule_id:
+        selected_schedule_ids.add(str(schedule_id))
+    schedules = [
+        deepcopy(item) for item in archive.get("schedule") or []
+        if item.get("id") in selected_schedule_ids
+    ]
+    return schedules
+
+
 def update_design(
     record: dict,
     content: CourseDesignContent,
@@ -425,6 +527,14 @@ def assembly_sources(
                 f"outline:{node.get('id') or index}", "knowledge_outline", title, content,
                 "difficult_points" if node.get("is_difficult_point") else "key_points" if node.get("is_key_point") else "knowledge_points",
                 source_name="已确认知识大纲", locator=f"knowledge-outline:{node.get('id') or index}",
+            ))
+        # 教学补充作为独立可插入块——把资料单元生成的教学补充带进教案组装
+        teacher_note = str(node.get("teacher_note") or "").strip()
+        if teacher_note:
+            items.append(_source_item(
+                f"outline:{node.get('id') or index}:note", "knowledge_outline",
+                f"{title} · 教学补充", teacher_note, "postscript",
+                source_name="知识大纲教学补充", locator=f"knowledge-outline:{node.get('id') or index}:note",
             ))
     if run:
         for message in (run.get("teaching_data") or {}).get("messages") or []:

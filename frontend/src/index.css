@@ -408,6 +408,21 @@ input[type=file]:focus-visible + .upload-zone { outline: 2px solid var(--accent)
 .empty-state.tall { min-height: 280px; }
 .empty-state strong { color: #475569; }
 .empty-state span { max-width: 27ch; line-height: 1.5; }
+/* 生成过程日志(等待空态): 展示后端实际在做什么 */
+.process-waiting.process-log { max-width: 520px; gap: 10px; }
+.process-log-head { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.process-log-head strong { color: #475569; }
+.process-log-head span { color: #94a3b8; }
+.process-log-list { width: 100%; max-width: 460px; display: grid; gap: 3px; margin-top: 6px; text-align: left; }
+.process-log-row { min-height: 26px; display: grid; grid-template-columns: 12px minmax(0,1fr); align-items: center; gap: 8px; padding: 3px 6px; border-radius: 4px; background: #f8fafc; }
+.process-log-row i { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; }
+.process-log-row i.start { background: #60a5fa; animation: pulse-log 1.4s ease-in-out infinite; }
+.process-log-row i.heartbeat { background: #fbbf24; }
+.process-log-row i.done { background: #34d399; }
+.process-log-row i.waiting { background: #e2e8f0; }
+.process-log-row span { display: grid; gap: 1px; color: #475569; font-size: 11px; }
+.process-log-row span small { color: #94a3b8; font-size: 10px; }
+@keyframes pulse-log { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 .error-banner { position: fixed; left: 50%; bottom: 17px; z-index: 30; min-width: 360px; max-width: calc(100vw - 30px); display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 10px 12px; transform: translateX(-50%); border: 1px solid #fecaca; border-radius: 6px; color: #991b1b; background: #fff7f7; box-shadow: 0 10px 28px rgba(127,29,29,.15); font-size: 11px; }
 .error-banner button { border: 0; color: #991b1b; background: transparent; font-size: 11px; }
 .app-loading { min-height: 100dvh; display: flex; align-items: center; justify-content: center; gap: 13px; color: #334155; background: #f8fafc; }

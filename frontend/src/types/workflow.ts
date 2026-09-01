@@ -479,6 +479,8 @@ export interface CourseDesignRecord {
   material_unit_id?: string | null;
   knowledge_outline_id?: string | null;
   knowledge_outline_version?: number | null;
+  outline_has_newer_version?: boolean;
+  outline_latest_version?: number | null;
   run_id?: string | null;
   status: CourseDesignStatus;
   version: number;

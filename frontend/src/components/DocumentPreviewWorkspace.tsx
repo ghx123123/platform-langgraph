@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSearch, FileText, Gauge,
+  AlertTriangle, BookOpen, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSearch, FileText,
   Layers3, ListChecks, Loader2, PanelsTopLeft, ScanSearch, Search, Target, TextSearch, Timer, X,
 } from 'lucide-react';
 import { documentApi } from '../lib/api';
 import { getErrorMessage } from '../lib/api';
 import type {
-  DocumentExtractionReport, DocumentSection, DocumentVisualAnalysis, TeachingData, TeachingScope,
-  VisualAnalysisBudget,
+  DocumentExtractionReport, DocumentSection, DocumentVisualAnalysis, MaterialUnitKnowledgeNode,
+  TeachingData, VisualAnalysisBudget,
 } from '../types/workflow';
 import './DocumentPreviewWorkspace.css';
 
@@ -22,8 +22,13 @@ interface Props {
   processedCharacterCount?: number;
   isTruncated?: boolean;
   analysis?: TeachingData['content_analysis'];
-  scope?: TeachingScope;
   onVisualEvidenceChange?: (items: DocumentVisualAnalysis[]) => void;
+  // 初始预览方式：默认 'original'（原页 PDF）；从资料单元导入的课程设计用 'text'，
+  // 让教师一开始就看到已解析正文而不是原始 PDF 版式。
+  defaultView?: 'original' | 'text';
+  // 从资料单元导入的知识大纲详情（知识点层级 + 重难点 + 教学补充），供材料预览里展示。
+  knowledge_outline_nodes?: MaterialUnitKnowledgeNode[];
+  knowledge_outline_version?: number | null;
 }
 
 const relevanceNames = { core: '教学核心', support: '支撑内容', context: '背景参考' } as const;
@@ -64,14 +69,14 @@ function visualAnalysisText(analysis: DocumentVisualAnalysis): string {
   ].filter(Boolean).join('\n');
 }
 
-export function DocumentPreviewWorkspace({ documentId, fileName, courseName, rawText, sections, extractionReport, characterCount, processedCharacterCount, isTruncated, analysis, scope, onVisualEvidenceChange }: Props) {
+export function DocumentPreviewWorkspace({ documentId, fileName, courseName, rawText, sections, extractionReport, characterCount, processedCharacterCount, isTruncated, analysis, onVisualEvidenceChange, defaultView, knowledge_outline_nodes, knowledge_outline_version }: Props) {
   const outline = useMemo(() => sections?.length ? sections : fallbackSections(rawText), [rawText, sections]);
   const canPreviewOriginal = supportsOriginalPreview(fileName, documentId);
   const isPresentation = /\.pptx$/i.test(fileName);
   const isPdf = /\.pdf$/i.test(fileName);
   const [selectedId, setSelectedId] = useState(outline[0]?.id || '');
   const [query, setQuery] = useState('');
-  const [previewMode, setPreviewMode] = useState<PreviewMode>(() => canPreviewOriginal ? 'original' : 'text');
+  const [previewMode, setPreviewMode] = useState<PreviewMode>(() => defaultView === 'text' ? 'text' : (canPreviewOriginal ? 'original' : 'text'));
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -81,6 +86,19 @@ export function DocumentPreviewWorkspace({ documentId, fileName, courseName, raw
   const [visualLoading, setVisualLoading] = useState(false);
   const [visualError, setVisualError] = useState('');
   const [visualElapsed, setVisualElapsed] = useState(0);
+  // 左列(知识大纲+内容目录)宽度可拖拽, 默认270px, 范围 220-480
+  const [outlineWidth, setOutlineWidth] = useState(270);
+  const outlineDragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const onOutlineDragStart = (event: React.PointerEvent) => {
+    outlineDragRef.current = { startX: event.clientX, startW: outlineWidth };
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  };
+  const onOutlineDragMove = (event: React.PointerEvent) => {
+    if (!outlineDragRef.current) return;
+    const next = Math.max(220, Math.min(480, outlineDragRef.current.startW + (event.clientX - outlineDragRef.current.startX)));
+    setOutlineWidth(next);
+  };
+  const onOutlineDragEnd = () => { outlineDragRef.current = null; };
   const coverage = analysis?.document_coverage;
   const insights = analysis?.section_insights || [];
   const insightBySection = useMemo(() => new Map(insights.map((item) => [item.section_id, item])), [insights]);
@@ -212,31 +230,32 @@ export function DocumentPreviewWorkspace({ documentId, fileName, courseName, raw
         </div>
       </header>
 
-      {extractionReport && (
-        <details className={`extraction-report quality-${extractionReport.quality_level}`}>
-          <summary>
-            <div className="extraction-score"><Gauge size={17} /><strong>{extractionReport.quality_score}</strong><span>解析质量</span></div>
-            <div className="extraction-overview"><strong>{extractionReport.format} · {extractionReport.page_count ? `${extractionReport.page_count} 页` : '页数未知'}</strong><span>{extractionReport.title_count} 标题 · {extractionReport.table_count} 表格 · {extractionReport.image_count} 图片</span></div>
-            <span className="extraction-level">{extractionReport.quality_level === 'high' ? '结构可靠' : extractionReport.quality_level === 'medium' ? '建议复核' : '需要复核'}</span>
-            <ChevronDown size={15} />
-          </summary>
-          <div className="extraction-details"><span>解析引擎：{extractionReport.engine}</span><span>文本块：{extractionReport.text_block_count}</span><span>疑似扫描页：{extractionReport.scanned_page_count}</span>{extractionReport.ocr_page_count ? <span className="ocr-confirmed">页面 OCR：{extractionReport.ocr_page_count} 页</span> : null}{extractionReport.page_reports?.length ? <span className="ocr-confirmed">逐页记录：{extractionReport.page_reports.filter((page) => page.character_count > 0).length}/{extractionReport.page_reports.length} 页</span> : null}{extractionReport.ocr_image_count ? <span className="ocr-confirmed">图片 OCR：{extractionReport.ocr_image_count} 张</span> : null}{extractionReport.warnings.length ? <ul>{extractionReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : <p><CheckCircle2 size={13} />未发现明显结构风险</p>}</div>
-        </details>
-      )}
-
       {coverage ? (
         <div className="coverage-band" aria-label="文档分析覆盖情况">
           <div className="coverage-score"><CheckCircle2 size={18} /><strong>{coverage.coverage_percent}%</strong><span>结构扫描覆盖</span></div>
           <div className="coverage-method"><span>{coverage.method}</span><small>已检查 {coverage.analyzed_sections}/{coverage.total_sections} 个分区，深读 {coverage.focused_sections} 个教学核心分区</small></div>
           <div className="coverage-legend"><span className="core">{coverage.focused_sections} 核心</span><span className="support">{coverage.support_sections} 支撑</span><span className="context">{coverage.context_sections} 背景</span></div>
         </div>
-      ) : (
-        <div className="coverage-band pending"><div className="coverage-score"><FileSearch size={18} /><strong>待分析</strong><span>已完成结构预览</span></div><div className="coverage-method"><span>启动后将逐区扫描并回写分析覆盖</span><small>当前教学范围：{scope?.selected_point_titles.length || 0} 个知识点</small></div></div>
-      )}
+      ) : null}
       {isTruncated && <div className="document-warning"><AlertTriangle size={14} />原文共 {characterCount.toLocaleString()} 字符，本次按系统上限处理前 {processed.toLocaleString()} 字符。</div>}
 
-      <div className="document-browser">
-        <aside className="document-outline">
+      <div className="document-browser" style={{ '--dw-outline': `${outlineWidth}px` } as React.CSSProperties}>
+        <aside className="document-outline" style={{ width: `${outlineWidth}px`, minWidth: `${outlineWidth}px`, maxWidth: `${outlineWidth}px` }}>
+          {knowledge_outline_nodes?.length ? <section className="knowledge-outline-panel">
+            <div className="knowledge-outline-heading"><div><BookOpen size={14} /><strong>导入的知识大纲</strong><span>v{knowledge_outline_version || 1}</span></div><small>{knowledge_outline_nodes.length} 个知识点</small></div>
+            <nav className="knowledge-outline-list" aria-label="导入的知识大纲">
+              {knowledge_outline_nodes.map((node, index) => (
+                <div key={node.id || index} className={`knowledge-outline-node level-${node.level}`}>
+                  <button type="button" className="knowledge-outline-main" onClick={() => { const section = outline.find((s) => node.title && (s.title.includes(node.title) || node.title.includes(s.title))); if (section) setSelectedId(section.id); }}>
+                    <span className="knowledge-outline-marker">{node.level > 1 ? (index + 1) : null}</span>
+                    <span className="knowledge-outline-title">{node.title}</span>
+                    <span className="knowledge-outline-flags">{node.is_key_point && <em className="ko-flag ko-key">重点</em>}{node.is_difficult_point && <em className="ko-flag ko-diff">难点</em>}</span>
+                  </button>
+                  {(node.description || node.teacher_note) && <details className="knowledge-outline-detail"><summary>{node.teacher_note ? '📖 教学补充' : '说明'}</summary>{node.description && <p>{node.description}</p>}{node.teacher_note && <blockquote>{node.teacher_note}</blockquote>}</details>}
+                </div>
+              ))}
+            </nav>
+          </section> : null}
           <div className="outline-heading"><div><Layers3 size={15} /><strong>内容目录</strong></div><small>{filtered.length}/{outline.length}</small></div>
           <label className="document-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题或摘要" aria-label="搜索材料分区" />{query && <button type="button" onClick={() => setQuery('')} aria-label="清空搜索"><X size={13} /></button>}</label>
           <nav className="outline-list" aria-label="文档分区">
@@ -248,6 +267,7 @@ export function DocumentPreviewWorkspace({ documentId, fileName, courseName, raw
             {!filtered.length && <div className="outline-empty">没有匹配的分区</div>}
           </nav>
         </aside>
+        <div className="dw-split" onPointerDown={onOutlineDragStart} onPointerMove={onOutlineDragMove} onPointerUp={onOutlineDragEnd} onPointerLeave={onOutlineDragEnd} role="separator" aria-label="调整目录宽度" />
 
         {previewMode === 'original' && canPreviewOriginal ? (
           <article className="document-reader original-reader">

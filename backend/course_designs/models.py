@@ -69,10 +69,14 @@ class CourseDesignCreate(BaseModel):
 
 
 class CourseDesignKnowledgeNode(BaseModel):
+    id: str = Field(default="")
     title: str = Field(min_length=1, max_length=240)
     level: int = Field(ge=1, le=6)
+    description: str = Field(default="", max_length=8000)
     is_key_point: bool = False
     is_difficult_point: bool = False
+    teacher_note: str = Field(default="", max_length=20000)
+    evidence: list[dict] = Field(default_factory=list)
 
 
 class CourseDesignKnowledgeOutline(BaseModel):
@@ -163,6 +167,8 @@ class CourseDesignRecord(BaseModel):
     material_unit_id: str | None = None
     knowledge_outline_id: str | None = None
     knowledge_outline_version: int | None = None
+    outline_has_newer_version: bool = False
+    outline_latest_version: int | None = None
     run_id: str | None = None
     status: DesignStatus = "draft"
     version: int = Field(default=1, ge=1)

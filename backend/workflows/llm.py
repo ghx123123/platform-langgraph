@@ -150,6 +150,35 @@ class ModelClient:
         self._record_metrics(started, system_prompt, user_prompt, output, response)
         return output
 
+    async def agent_iterate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        iterations: int = 2,
+        session_id: str | None = None,
+        round_focus: str | None = None,
+    ) -> dict:
+        """dsh 多轮自主迭代(复用 session 保记忆)。非 dsh provider 时退化为单次 generate。
+
+        return {"final_response", "iterations", "turns"}。
+        用于内容分析/教学设计等需要连贯、可自查收敛的关键节点:
+        dsh 在同一 session 内多轮修订并记住上下文, 而非每轮失忆的单次调用。
+        """
+        if self.provider != "dsh":
+            output = await self.generate(system_prompt, user_prompt)
+            return {"final_response": output, "iterations": 1, "turns": []}
+        if self._engine is not None and getattr(self._engine, "default_model", None) != self.model_name:
+            await self._engine.close()
+            self._engine = None
+        engine = self.ensure_dsh_engine()
+        started = perf_counter()
+        result = await engine.agent_run(
+            system_prompt, user_prompt, iterations=iterations,
+            model=self.model_name, session_id=session_id, round_focus=round_focus,
+        )
+        self._record_metrics(started, system_prompt, user_prompt, result.get("final_response", ""))
+        return result
+
     @staticmethod
     def _strip_reasoning(text: str) -> str:
         """移除推理模型的思维链，避免 <think> 内容出现在课堂记录里。"""
@@ -162,12 +191,17 @@ class ModelClient:
 
     async def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
         text = await self.generate(system_prompt, user_prompt)
+        return self._extract_json_text(text)
+
+    @classmethod
+    def _extract_json_text(cls, text: str) -> dict[str, Any]:
+        """从任意模型输出中稳健提取 JSON 对象(剥代码块 + 取最大括号配平对象)。纯函数, 不产生第二次调用。"""
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError:
             # 取最外层完整对象：括号配平，避免截断到说明性文字里的片段
-            match = self._balanced_object(cleaned)
+            match = cls._balanced_object(cleaned)
             if match is None:
                 raise ValueError("Model response did not contain a JSON object")
             parsed = json.loads(match)
@@ -204,6 +238,8 @@ class ModelClient:
                         try:
                             json.loads(candidate)
                         except json.JSONDecodeError:
+                            # 括号配平但 json.loads 失败(可能含未加引号的注释/尾部文字)的候选
+                            # 记入失败候选但不丢弃, 跳到下一个 '{' 再试, 取所有能配平的候选里最大。
                             break
                         candidates.append(candidate)
                         break

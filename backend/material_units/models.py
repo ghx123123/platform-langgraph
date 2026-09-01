@@ -30,6 +30,24 @@ class MaterialUnitAppend(BaseModel):
     extract_immediately: bool = False
 
 
+class MaterialUnitImportPrecheckRequest(BaseModel):
+    material_ids: list[str] = Field(min_length=1, max_length=40)
+
+
+class MaterialUnitImportPrecheckItem(BaseModel):
+    material_id: str
+    name: str = ""
+    parse_status: str = "metadata_only"
+    parse_message: str = ""
+    needs_parse: bool = False
+
+
+class MaterialUnitImportPrecheckResponse(BaseModel):
+    all_parsed: bool = False
+    needs_parse: list[MaterialUnitImportPrecheckItem] = Field(default_factory=list)
+    items: list[MaterialUnitImportPrecheckItem] = Field(default_factory=list)
+
+
 class MaterialUnitRename(BaseModel):
     title: str = Field(min_length=1, max_length=160)
 

@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课程设计 · 多智能体协作流程</title>
+<style>
+/* ============ 基础 ============ */
+:root{
+  --bg:#f4f6fa; --card:#fff; --line:#e3e8f0; --ink:#1e293b; --ink2:#64748b; --ink3:#94a3b8;
+  --blue:#2f6bff; --blue2:#1468e8; --blueSoft:#eaf2ff; --green:#16a34a; --greenSoft:#e9f9ef;
+  --amber:#d97706; --amberSoft:#fdf3e3; --red:#dc2626; --purple:#8b5cf6; --purpleSoft:#f3eeff;
+  --gray:#cbd5e1; --graySoft:#f1f5f9;
+  --shadow:0 4px 16px rgba(15,23,42,.07);
+  --shadow2:0 10px 32px rgba(15,23,42,.12);
+  --radius:14px;
+  --mono:"JetBrains Mono",Consolas,"Cascadia Code",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  background:var(--bg); color:var(--ink); font-size:13px; overflow:hidden;
+}
+button{font-family:inherit; cursor:pointer}
+.app{display:flex; flex-direction:column; height:100vh; min-width:1280px}
+
+/* ============ 顶部导航 ============ */
+.topbar{
+  display:flex; align-items:center; gap:18px; height:56px; padding:0 18px;
+  background:var(--card); border-bottom:1px solid var(--line); flex:none;
+}
+.brand{display:flex; align-items:center; gap:9px; min-width:236px}
+.logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#2f6bff,#1468e8);
+  display:grid;place-items:center;color:#fff;box-shadow:0 4px 10px rgba(47,107,255,.35)}
+.logo svg{width:17px;height:17px}
+.brand strong{display:block;font-size:14px;letter-spacing:.5px}
+.brand small{display:block;color:var(--ink3);font-size:9.5px;letter-spacing:1.4px;font-weight:600}
+.steps{display:flex; flex:1; gap:6px}
+.step{flex:1; display:flex; gap:8px; align-items:center; padding:7px 10px; border-radius:10px; color:var(--ink3)}
+.step .no{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:700;flex:none}
+.step .t{white-space:nowrap}
+.step .t small{display:block;color:var(--ink3);font-size:10px;margin-top:1px}
+.step.done{color:#3b82f6}
+.step.done .no{background:var(--blueSoft);color:var(--blue2)}
+.step.active{background:#eef4ff;color:var(--blue2);box-shadow:inset 0 0 0 1.5px #c8dcff}
+.step.active .no{background:var(--blue2);color:#fff}
+.step.active .t small{color:#7ca5e8}
+.step.todo .no{background:var(--graySoft);color:var(--ink3)}
+.top-actions{display:flex;align-items:center;gap:8px;flex:none}
+.ghost-btn{height:30px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink2);font-size:12px}
+.ghost-btn:hover{border-color:#c8d5e8;color:var(--ink)}
+.model-chip{height:30px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:#fff;
+  display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+.model-chip b{color:var(--ink);font-weight:600}
+.model-chip .chev{color:var(--ink3);font-size:9px}
+
+/* ============ 三栏布局 ============ */
+.layout{flex:1; min-height:0; display:flex; gap:12px; padding:12px}
+.left{width:290px; flex:none; display:flex; flex-direction:column; gap:10px; min-height:0; overflow:auto}
+.main{flex:1; min-width:0; display:flex; flex-direction:column; gap:12px; overflow:auto}
+.right{width:384px; flex:none}
+.card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
+
+/* ============ 左侧栏 ============ */
+.left .card{padding:13px 14px}
+.card-title{display:flex; align-items:center; justify-content:space-between; font-size:12px; font-weight:700; color:var(--ink); margin-bottom:9px}
+.card-title .hint{color:var(--ink3); font-weight:500; font-size:10.5px}
+.card-title .cnt{background:var(--blueSoft); color:var(--blue2); border-radius:9px; padding:1px 7px; font-size:10px; font-weight:700}
+.project-head{display:flex; gap:9px; align-items:flex-start}
+.project-ico{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#1f7a4d,#16a34a); color:#fff; display:grid;place-items:center;flex:none;box-shadow:0 4px 10px rgba(22,163,74,.3)}
+.project-ico svg{width:17px;height:17px}
+.project-head strong{display:block;font-size:13.5px}
+.project-head small{display:block;color:var(--ink2);font-size:11px;margin-top:2px}
+.progress-row{display:flex; align-items:center; gap:8px; margin-top:10px}
+.progress-row b{font-size:11px;color:var(--blue2)}
+.progress-bar{flex:1;height:6px;border-radius:3px;background:var(--graySoft);overflow:hidden}
+.progress-bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#3b82f6,#1468e8);width:38%}
+
+.team{display:flex; gap:8px; padding:9px 0; border-top:1px solid #f1f5f9; align-items:center}
+.team:first-of-type{border-top:0}
+.team .t-ico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;flex:none}
+.team .t-ico svg{width:15px;height:15px}
+.team .t-main{flex:1;min-width:0}
+.team .t-main b{display:block;font-size:12.5px}
+.team .t-main small{display:block;color:var(--ink3);font-size:10.5px;margin-top:1px}
+.team .t-state{font-size:10px;padding:2px 7px;border-radius:9px;flex:none}
+.t-state.run{background:var(--blueSoft);color:var(--blue2)}
+.t-state.wait{background:var(--amberSoft);color:var(--amber)}
+.t-state .dot{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:3px;vertical-align:1px;animation:blink 1.4s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+.tasks{display:grid; gap:2px}
+.task-row{display:flex; align-items:center; gap:8px; padding:5.5px 2px; color:var(--ink2); font-size:12px; border-radius:6px}
+.task-row:hover{background:var(--graySoft)}
+.task-row .chk{width:15px;height:15px;border-radius:5px;border:1.5px solid var(--gray);display:grid;place-items:center;flex:none;color:#fff;font-size:9px}
+.task-row.done .chk{background:var(--green);border-color:var(--green)}
+.task-row.doing .chk{border-color:var(--blue2)}
+.task-row.doing{color:var(--ink)}
+.task-row.doing .sp{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--blueSoft);border-top-color:var(--blue2);animation:spin 1s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.task-row small{margin-left:auto;color:var(--ink3);font-size:10px}
+.view-all{margin-top:9px;width:100%;height:30px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink2);font-size:11.5px}
+.view-all:hover{border-color:#c8d5e8;color:var(--ink)}
+
+/* ============ 中央：协作流程图卡片 ============ */
+.flow-card{padding:13px 15px; flex:none}
+.flow-head{display:flex; align-items:center; gap:10px}
+.flow-head h2{font-size:14.5px; font-weight:700; margin-right:auto}
+.flow-head .tools{display:flex; gap:8px; align-items:center}
+.tool-btn{height:28px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink2);font-size:11.5px;display:flex;align-items:center;gap:5px}
+.tool-btn svg{width:13px;height:13px}
+.switch{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink2)}
+.switch .track{width:32px;height:18px;border-radius:9px;background:var(--gray);position:relative;transition:background .2s}
+.switch .track::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch.on .track{background:var(--blue2)}
+.switch.on .track::after{left:16px}
+
+.flow-canvas-wrap{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:#fbfcfe;overflow:auto;position:relative}
+.flow-canvas{position:relative;width:1040px;height:530px;transition:transform .25s ease}
+.flow-canvas.zoomed{transform:scale(1.35);transform-origin:0 0}
+.flow-lines{position:absolute;inset:0;pointer-events:none}
+.flow-lines path{fill:none;stroke-width:1.6}
+.flow-lines .msg{stroke:#5a8ef0;stroke-dasharray:6 5;animation:dashmove 1.2s linear infinite}
+.flow-lines .msg-done{stroke:#34c07c;stroke-width:2}
+.flow-lines .super{stroke:#a78bfa;stroke-dasharray:2 5;animation:dashmove 1s linear infinite}
+.flow-lines .stream{stroke:#93b4f5;stroke-width:2;stroke-dasharray:0.5 7;animation:dashmove .8s linear infinite;opacity:.9}
+@keyframes dashmove{to{stroke-dashoffset:-22}}
+
+.node{position:absolute;background:#fff;border:1.2px solid var(--line);border-radius:12px;
+  padding:9px 11px;display:flex;gap:9px;align-items:center;cursor:pointer;box-shadow:var(--shadow);
+  transition:box-shadow .2s,transform .2s;user-select:none}
+.node:hover{box-shadow:var(--shadow2);transform:translateY(-1px)}
+.node.active{outline:2.5px solid #9db9f7;outline-offset:2px}
+.node .n-ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;flex:none;position:relative}
+.node .n-ico svg{width:16px;height:16px}
+.node .n-ico .st{position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:50%;border:2px solid #fff}
+.node .n-txt{min-width:0}
+.node .n-txt b{display:block;font-size:12.5px}
+.node .n-txt small{display:block;color:var(--ink3);font-size:10.5px;margin-top:1.5px}
+.node .n-txt em{display:block;font-style:normal;font-size:10px;margin-top:3px;font-weight:600}
+.node.done{border-color:#bfe8cf}
+.node.done .n-txt em{color:var(--green)}
+.node.done .n-ico .st{background:var(--green)}
+.node.running{border-color:#a7c4f9}
+.node.running .n-txt em{color:var(--blue2)}
+.node.running .n-ico .st{background:var(--blue2);animation:blink 1.2s ease-in-out infinite}
+.node.running .n-frame{position:absolute;inset:-3px;border-radius:14px;border:1.5px solid transparent;
+  animation:nodePulse 2.2s ease-in-out infinite;pointer-events:none}
+@keyframes nodePulse{0%,100%{border-color:rgba(47,107,255,.0);box-shadow:0 0 0 0 rgba(47,107,255,.0)}
+  50%{border-color:rgba(47,107,255,.45);box-shadow:0 0 0 6px rgba(47,107,255,.06)}}
+.node.super-running{border-color:#d5c5fb}
+.node.super-running .n-txt em{color:var(--purple)}
+.node.super-running .n-ico .st{background:var(--purple);animation:blink 1.2s ease-in-out infinite}
+.node.waiting{border-style:dashed;border-color:var(--gray)}
+.node.waiting .n-txt em{color:var(--ink3)}
+.node.waiting .n-ico .st{background:var(--gray)}
+.node.small{padding:7px 9px;border-radius:10px}
+.node.small .n-ico{width:26px;height:26px;border-radius:8px}
+.node.small .n-ico svg{width:13px;height:13px}
+
+/* 流程图图例 */
+.legend{display:flex; align-items:center; gap:16px; margin-top:11px; font-size:11px; color:var(--ink2); flex-wrap:wrap}
+.legend .li{display:flex;align-items:center;gap:5px}
+.legend .sw{width:15px;height:9px;border-radius:3px}
+.legend .line{width:20px;height:2px;border-radius:1px}
+.legend .l-fl{width:20px;height:2px;background:repeating-linear-gradient(90deg,#5a8ef0 0 5px,transparent 5px 8px)}
+.legend .l-sp{width:20px;height:2px;background:repeating-linear-gradient(90deg,#a78bfa 0 5px,transparent 5px 8px)}
+
+/* ============ 下方面板 ============ */
+.panels{display:grid; grid-template-columns:1fr 1fr; gap:12px; flex:none}
+.panel{padding:13px 15px}
+.panel-head{display:flex; align-items:center; gap:8px; margin-bottom:9px}
+.panel-head h3{font-size:13px; font-weight:700; margin-right:auto}
+.panel-head .hint{color:var(--ink3); font-size:10.5px}
+.panel-ico{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;color:#fff}
+.panel-ico svg{width:12px;height:12px}
+.msgs{display:grid; gap:8px; max-height:252px; overflow:auto}
+.msg{display:flex; gap:8px; align-items:flex-start}
+.msg .m-ava{width:26px;height:26px;border-radius:9px;flex:none;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700;box-shadow:0 2px 6px rgba(15,23,42,.15)}
+.msg .m-body{flex:1;min-width:0}
+.msg .m-body header{display:flex; gap:6px; align-items:center}
+.msg .m-body header b{font-size:11.5px}
+.msg .m-body header span{color:var(--ink3);font-size:10px;font-family:var(--mono)}
+.msg .m-body p{color:var(--ink2); font-size:11.5px; line-height:1.55; margin-top:3px}
+.msg .bubble{display:inline-block;max-width:92%;margin-top:3px;padding:6px 9px;border-radius:10px;border-top-left-radius:2px;
+  background:#f3f7fd;border:1px solid #e3edfa;color:var(--ink2);font-size:11.5px;line-height:1.6}
+.msg.from-student{flex-direction:row-reverse}
+.msg.from-student .m-body{align-items:flex-end;display:flex;flex-direction:column}
+.msg.from-student .m-body header{flex-direction:row-reverse}
+.msg.from-student .bubble{background:#e9f7ee;border:1px solid #d5eedd;border-radius:10px;border-top-right-radius:2px;color:#1f5c39}
+.msg.typing .m-body p{color:var(--blue2)}
+.msg.typing .bubble{background:#f3f8ff;border-color:#cfe0fb;color:var(--blue2)}
+.msg.typing .bubble::after{content:"▌";animation:blink 1s steps(1) infinite}
+.gen-list{display:grid; gap:7px; max-height:252px; overflow:auto}
+.gen{display:flex; gap:9px; align-items:center; padding:8px 9px; border:1px solid var(--line); border-radius:10px; background:#fbfcfe}
+.gen .g-no{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:10.5px;font-weight:700}
+.gen .g-body{flex:1;min-width:0}
+.gen .g-body header{display:flex;align-items:center;gap:7px}
+.gen .g-body header b{font-size:11.5px}
+.gen .g-body small{display:block;color:var(--ink3);font-size:10px;margin-top:1px}
+.gen .g-body .g-track{height:4px;border-radius:2px;background:var(--graySoft);margin-top:5px;overflow:hidden}
+.gen .g-body .g-track i{display:block;height:100%;border-radius:2px;background:var(--blue2);transition:width .4s}
+.gen .g-body .g-track i.done{background:var(--green)}
+.gen .g-body .g-track i.draft{background:var(--gray)}
+.gen .g-pct{flex:none;font-size:11px;font-weight:700;font-family:var(--mono)}
+.gen.done{background:var(--greenSoft);border-color:#cdeeda}
+.gen.doing{background:#f3f8ff;border-color:#cfe0fb}
+.gen.draft{background:#fbfcfe}
+
+/* ============ 右侧节点详情 ============ */
+.node-detail{display:flex; flex-direction:column; max-height:calc(100vh - 80px); position:sticky; top:0; overflow:hidden}
+.nd-head{padding:14px 16px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:flex-start}
+.nd-ico{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;color:#fff;flex:none}
+.nd-ico svg{width:18px;height:18px}
+.nd-title{flex:1;min-width:0}
+.nd-title strong{display:block;font-size:14px}
+.nd-title small{display:block;color:var(--ink3);font-size:11px;margin-top:2px}
+.nd-badge{flex:none;font-size:10.5px;padding:3px 8px;border-radius:9px;font-weight:600}
+.nd-close{border:0;background:transparent;color:var(--ink3);font-size:14px;padding:2px;line-height:1}
+.nd-meta{padding:10px 16px; background:#fbfcfe;border-bottom:1px solid var(--line); display:grid;gap:7px;font-size:11.5px;color:var(--ink2)}
+.nd-meta .m-row{display:flex;gap:8px}
+.nd-meta .m-row b{color:var(--ink);width:44px;flex:none;font-weight:600}
+.nd-meta .m-row span em{font-style:normal;font-family:var(--mono);color:var(--ink3);font-size:10.5px}
+.nd-ring{display:flex;align-items:center;gap:12px;margin-top:4px}
+.nd-ring .ring{width:52px;height:52px;flex:none}
+.nd-ring .ring svg{width:52px;height:52px}
+.nd-ring .ring text{font-size:12px;font-weight:700;fill:var(--blue2);font-family:var(--mono)}
+.nd-ring .ring-info b{display:block;font-size:13px;color:var(--blue2)}
+.nd-ring .ring-info small{display:block;color:var(--ink3);font-size:10.5px;margin-top:1px}
+.nd-scroll{flex:1; overflow:auto; padding:12px 16px; display:grid; gap:12px; align-content:start}
+.nd-sec-title{font-size:11.5px;font-weight:700;color:var(--ink2);display:flex;align-items:center;gap:6px}
+.nd-sec-title svg{width:13px;height:13px;color:var(--blue2)}
+.nd-sec-title .live{font-size:9px;color:#16a34a;background:var(--greenSoft);border:1px solid #bfe8cf;border-radius:7px;padding:1px 6px;font-weight:600;letter-spacing:.4px}
+.dsh-stream{border:1px solid var(--line);border-radius:11px;background:#0f172a;color:#e2e8f0;overflow:hidden}
+.dsh-head{display:flex;align-items:center;gap:7px;padding:7px 10px;background:#1e293b;border-bottom:1px solid #334155}
+.dsh-head .d-icon{width:14px;height:14px;color:#5a8ef0;flex:none}
+.dsh-head b{font-size:10.5px;font-family:var(--mono);color:#93c5fd;flex:1}
+.dsh-head .d-state{font-size:9.5px;color:#34d399;display:flex;align-items:center;gap:4px}
+.dsh-head .d-state::before{content:"";width:6px;height:6px;border-radius:50%;background:#34d399;animation:blink 1.2s ease-in-out infinite}
+.dsh-body{max-height:150px;overflow:auto;padding:8px 10px;font-family:var(--mono);font-size:10.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word}
+.dsh-body .d-tok{color:#cbd5e1}
+.dsh-body .d-think{color:#8b98a9;font-style:italic}
+.dsh-body .d-cursor{display:inline-block;width:7px;height:12px;background:#5a8ef0;vertical-align:-2px;animation:blink .9s steps(1) infinite}
+.dsh-call{display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid #263244;font-size:9.5px;color:#7d8da3;font-family:var(--mono)}
+.dsh-call .dot{width:5px;height:5px;border-radius:50%;background:#5a8ef0;animation:blink 1.3s infinite}
+.dsh-call span em{font-style:normal;color:#93c5fd}
+.sub-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.sub-card{border:1px solid var(--line);border-radius:10px;padding:9px 10px;background:#fbfcfe}
+.sub-card header{display:flex;align-items:center;gap:6px}
+.sub-card header b{font-size:11.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub-card header .st{font-size:9.5px;padding:1.5px 6px;border-radius:8px;flex:none;font-weight:600}
+.sub-card .s-track{height:4px;border-radius:2px;background:var(--graySoft);margin-top:7px;overflow:hidden}
+.sub-card .s-track i{display:block;height:100%;border-radius:2px}
+.sub-card .s-meta{display:block;color:var(--ink3);font-size:10px;margin-top:5px;line-height:1.45}
+.st-run{background:var(--blueSoft);color:var(--blue2)}
+.st-done{background:var(--greenSoft);color:var(--green)}
+.st-draft{background:var(--graySoft);color:var(--ink3)}
+.s-run i{background:var(--blue2)}
+.s-done i{background:var(--green)}
+.s-draft i{background:var(--gray)}
+.sub-card.active-sub{border-color:#9db9f7;box-shadow:0 0 0 3px rgba(47,107,255,.08)}
+.path-flow{display:flex;align-items:center;gap:5px;flex-wrap:nowrap}
+.path-step{flex:1;min-width:0;text-align:center;padding:7px 4px;border-radius:9px;border:1px solid var(--line);background:#fbfcfe}
+.path-step b{display:block;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.path-step small{display:block;color:var(--ink3);font-size:9.5px;margin-top:2px}
+.path-step.p-done{border-color:#cdeeda;background:var(--greenSoft)}
+.path-step.p-done b{color:var(--green)}
+.path-step.p-act b{color:var(--blue2)}
+.path-step.p-act{border-color:#cfe0fb;background:#f3f8ff}
+.path-arrow{color:var(--ink3);font-size:11px;flex:none}
+.runtime-list{display:grid;gap:7px}
+.runtime{display:flex;gap:8px;align-items:center}
+.runtime .sp{width:11px;height:11px;border-radius:50%;border:2px solid var(--blueSoft);border-top-color:var(--blue2);animation:spin 1s linear infinite;flex:none}
+.runtime.done .sp{border:0;background:var(--green);animation:none}
+.runtime .r-body{flex:1;min-width:0}
+.runtime .r-body b{display:block;font-size:11.5px}
+.runtime .r-body small{display:block;color:var(--ink3);font-size:10px;font-family:var(--mono);margin-top:1px}
+.runtime .r-state{font-size:10px;color:var(--ink3);flex:none}
+.nd-actions{flex:none;padding:11px 16px;border-top:1px solid var(--line);display:flex;gap:8px;background:#fff}
+.nd-actions button{height:34px;border-radius:9px;font-size:12px;display:flex;align-items:center;gap:6px;justify-content:center}
+.nd-actions .primary{flex:1;background:var(--blue2);color:#fff;border:0;font-weight:600;box-shadow:0 4px 12px rgba(20,104,232,.3)}
+.nd-actions .secondary{flex:1;background:#fff;border:1px solid var(--line);color:var(--ink2)}
+.nd-actions .danger{flex:1;background:#fff;border:1px solid #f3d3d3;color:var(--red)}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important; transition:none !important}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== 顶部导航 ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l3 6 6 .8-4.5 4.2 1.2 6.3L12 16.4 6.3 19.3l1.2-6.3L3 8.8 9 8z" fill="#fff"/></svg>
+      </div>
+      <div><strong>课程教学智能体平台</strong><small>LANGGRAPH TEACHING STUDIO</small></div>
+    </div>
+    <nav class="steps">
+      <div class="step done"><span class="no">1</span><span class="t">中央配置<small>全局参数与运行优先级</small></span></div>
+      <div class="step done"><span class="no">2</span><span class="t">课程智能体库<small>本课程可用智能体清单</small></span></div>
+      <div class="step done"><span class="no">3</span><span class="t">资源检索<small>知识检索与范围确认</small></span></div>
+      <div class="step active"><span class="no">4</span><span class="t">课程设计<small>协作流图、多智能体生成与定制</small></span></div>
+      <div class="step todo"><span class="no">5</span><span class="t">成果中心<small>查看与导出教学材料</small></span></div>
+    </nav>
+    <div class="top-actions">
+      <button class="ghost-btn">工作区切换</button>
+      <div class="model-chip">⚙ <b>gpt-4o-mini</b> <span class="chev">▼</span></div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ===== 左侧栏 ===== -->
+    <aside class="left">
+      <!-- 教学项目 -->
+      <section class="card">
+        <div class="card-title">教学项目 / 课程设计</div>
+        <div class="project-head">
+          <div class="project-ico"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M7 17l9-9M7 9l10 10"/></svg></div>
+          <div>
+            <strong>Python 编程·认识与验证</strong>
+            <small>初中 · 编程与逻辑</small>
+          </div>
+        </div>
+        <div class="progress-row"><span style="font-size:10.5px;color:var(--ink2)">课程进度</span><div class="progress-bar"><i></i></div><b>38%</b></div>
+      </section>
+
+      <!-- 团队空间 -->
+      <section class="card">
+        <div class="card-title">团队空间 <span class="hint">（团队成员 · 不虚构）</span></div>
+
+        <div class="team">
+          <div class="t-ico" style="background:linear-gradient(135deg,#2f6bff,#1468e8)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>
+          </div>
+          <div class="t-main"><b>团队A 备课设计组</b><small>智能体 5 · 未读 2</small></div>
+          <span class="t-state run"><span class="dot"></span>进行中</span>
+        </div>
+
+        <div class="team">
+          <div class="t-ico" style="background:linear-gradient(135deg,#7c3aed,#8b5cf6)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a15 15 0 0 1 0 18"/></svg>
+          </div>
+          <div class="t-main"><b>团队B 课堂互动组</b><small>智能体 8</small></div>
+          <span class="t-state run"><span class="dot"></span>进行中</span>
+        </div>
+
+        <div class="team">
+          <div class="t-ico" style="background:linear-gradient(135deg,#d97706,#f59e0b)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="t-main"><b>团队C 督导优化组</b><small>智能体 3</small></div>
+          <span class="t-state wait">待命</span>
+        </div>
+      </section>
+
+      <!-- 知识库任务清单 -->
+      <section class="card">
+        <div class="card-title">知识库任务清单 <span class="cnt">4/5</span></div>
+        <div class="tasks">
+          <div class="task-row done"><span class="chk">✓</span>Python 编程规则与语法</div>
+          <div class="task-row doing"><span class="sp"></span>Tab 与空格混用会产生错误</div>
+          <div class="task-row done"><span class="chk">✓</span>IDLE 与终端运行差异</div>
+          <div class="task-row done"><span class="chk">✓</span>常见错误与排查方法</div>
+          <div class="task-row done"><span class="chk">✓</span>输入输出基本函数</div>
+        </div>
+        <button class="view-all">查看全部任务</button>
+      </section>
+    </aside>
+
+    <!-- ===== 中央主区 ===== -->
+    <main class="main">
+      <!-- 协作流程图 -->
+      <section class="card flow-card">
+        <div class="flow-head">
+          <h2>多智能体协作流程</h2>
+          <div class="tools">
+            <span class="tool-btn" id="zoomBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M7 10.5h7M10.5 7v7"/></svg>全局查看</span>
+            <span class="switch on" id="msgSwitch"><span class="track"></span>显示消息流</span>
+          </div>
+        </div>
+
+        <div class="flow-canvas-wrap">
+          <div class="flow-canvas" id="flowCanvas">
+            <!-- 连线层 -->
+            <svg class="flow-lines" width="1040" height="530" viewBox="0 0 1040 530">
+              <path class="msg-done" d="M190 246 L250 246"/>
+              <path class="msg-done" d="M420 246 L470 246"/>
+              <path class="msg"      d="M345 210 C400 150 420 140 480 112"/>
+              <path class="msg"      d="M670 236 C715 170 730 130 762 108"/>
+              <path class="msg"      d="M670 248 L762 216"/>
+              <path class="msg"      d="M670 262 C715 300 730 320 762 330"/>
+              <path class="super"    d="M834 108 C760 220 640 330 512 398"/>
+              <path class="super"    d="M834 216 C730 300 640 370 512 410"/>
+              <path class="super"    d="M834 330 C790 380 640 430 512 420"/>
+              <path class="stream"   d="M566 300 C540 350 530 380 512 400"/>
+              <path class="msg"      d="M512 452 L628 452"/>
+            </svg>
+
+            <!-- 节点层 -->
+            <div class="node done" data-agent="analyst" style="left:20px;top:202px;width:170px">
+              <span class="n-ico" style="background:linear-gradient(135deg,#0284c7,#0ea5e9)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L21 21"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>教材分析员</b><small>内容剖析 · 重难点</small><em>已完成</em></span>
+            </div>
+
+            <div class="node done" data-agent="designer" style="left:250px;top:202px;width:170px">
+              <span class="n-ico" style="background:linear-gradient(135deg,#0369a1,#38bdf8)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M14 3l7 7-9 9H5v-7z"/><path d="M13 4l7 7"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>教学设计员</b><small>目标 · 环节 · 练习</small><em>已完成</em></span>
+            </div>
+
+            <div class="node small done" data-agent="frames" style="left:480px;top:78px;width:150px">
+              <span class="n-ico" style="background:linear-gradient(135deg,#16a34a,#22c55e)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5z"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>讲授教案·框架</b><small>教学环节审定</small></span>
+            </div>
+
+            <div class="node running" data-agent="teacher" style="left:470px;top:202px;width:200px">
+              <span class="n-frame"></span>
+              <span class="n-ico" style="background:linear-gradient(135deg,#2f6bff,#1468e8)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.4 8.9 8.9 0 0 1-3.9-.9L3 21l2-5.2a8.38 8.38 0 0 1-1-4C4 6.1 7.7 3 12.5 3S21 6.1 21 11.5z"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>讲授教师·问答</b><small>生成回答 · 整合建议</small><em>进行中</em></span>
+            </div>
+
+            <div class="node small" data-agent="stu_high" style="left:762px;top:74px;width:150px">
+              <span class="n-ico" style="background:linear-gradient(135deg,#16a34a,#4ade80)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M22 10L12 5 2 10l10 5z"/><path d="M6 12.5V17c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>进阶学生</b><small>迁移问题</small><em style="color:var(--green)">进行中</em></span>
+            </div>
+            <div class="node small running" data-agent="stu_base" style="left:762px;top:182px;width:150px">
+              <span class="n-ico" style="background:linear-gradient(135deg,#d97706,#f59e0b)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>基础学生</b><small>概念问题</small><em>进行中</em></span>
+            </div>
+            <div class="node small" data-agent="stu_adv" style="left:762px;top:290px;width:150px">
+              <span class="n-ico" style="background:linear-gradient(135deg,#dc2626,#f87171)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 3-2 5-2 8h-10c0-3-2-5-2-8a7 7 0 0 1 7-7z"/><path d="M9 21h6"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>拓展学生</b><small>边界问题</small><em style="color:var(--amber)">进行中</em></span>
+            </div>
+
+            <div class="node super-running" data-agent="supervisor" style="left:320px;top:408px;width:190px">
+              <span class="n-frame"></span>
+              <span class="n-ico" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>教学督导</b><small>评分 · 改进建议</small><em>运行中</em></span>
+            </div>
+
+            <div class="node waiting" data-agent="finalizer" style="left:628px;top:416px;width:160px">
+              <span class="n-ico" style="background:linear-gradient(135deg,#64748b,#94a3b8)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.6 4H7.4a2 2 0 0 0-1.9 1.5z"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>成果整理员</b><small>汇总交付</small><em>将启动</em></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span class="li"><span class="sw" style="background:var(--greenSoft);border:1px solid #bfe8cf"></span>已完成</span>
+          <span class="li"><span class="sw" style="background:#f3f8ff;border:1.2px solid var(--blue2)"></span>进行中</span>
+          <span class="li"><span class="sw" style="background:var(--graySoft);border:1px dashed var(--gray)"></span>待启动</span>
+          <span class="li"><span class="l-fl"></span>消息流</span>
+          <span class="li"><span class="l-sp"></span>督导流</span>
+        </div>
+      </section>
+
+      <!-- 下方面板 -->
+      <div class="panels">
+        <section class="card panel" id="panelChat">
+          <div class="panel-head">
+            <span class="panel-ico" style="background:var(--blue2)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.4 8.9 8.9 0 0 1-3.9-.9L3 21l2-5.2a8.38 8.38 0 0 1-1-4C4 6.1 7.7 3 12.5 3S21 6.1 21 11.5z"/></svg></span>
+            <h3>A. 实时通信</h3><span class="hint">6 条消息</span>
+          </div>
+          <div class="msgs">
+            <div class="msg from-student"><span class="m-ava" style="background:linear-gradient(135deg,#16a34a,#4ade80)">高</span><div class="m-body"><header><b>进阶学生</b><span>10:21:53</span></header><div class="bubble">老师，Tab和空格混用到底会有什么后果？</div></div></div>
+            <div class="msg"><span class="m-ava" style="background:linear-gradient(135deg,#2f6bff,#1468e8)">讲</span><div class="m-body"><header><b>讲授教师·问答</b><span>10:21:49</span></header><div class="bubble">因为 Python 对缩进非常敏感，建议统一使用 4 个空格，混用会在解释时抛 IndentationError。</div></div></div>
+            <div class="msg from-student"><span class="m-ava" style="background:linear-gradient(135deg,#d97706,#f59e0b)">基</span><div class="m-body"><header><b>基础学生</b><span>10:21:48</span></header><div class="bubble">那我在 cmd 里运行结果和 IDLE 不一样，是哪里出了问题？</div></div></div>
+            <div class="msg"><span class="m-ava" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">督</span><div class="m-body"><header><b>教学督导</b><span>10:22:01</span></header><div class="bubble">建议：检查 IDLE 配置与解释器路径，并给出可操作的排查步骤（统一缩进 → 验证解释器 → python -tt 检测混用）。</div></div></div>
+            <div class="msg from-student"><span class="m-ava" style="background:linear-gradient(135deg,#dc2626,#f87171)">拓</span><div class="m-body"><header><b>拓展学生</b><span>10:22:02</span></header><div class="bubble">老师，不同系统下换行符/编码会影响吗？</div></div></div>
+            <div class="msg typing"><span class="m-ava" style="background:linear-gradient(135deg,#2f6bff,#1468e8)">讲</span><div class="m-body"><header><b>讲授教师·问答</b><span>10:22:21</span></header><div class="bubble">正在整合督导建议，生成最终回答…</div></div></div>
+          </div>
+        </section>
+
+        <section class="card panel" id="panelGen">
+          <div class="panel-head">
+            <span class="panel-ico" style="background:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5z"/><path d="M8 12h8M8 8h5"/></svg></span>
+            <h3>B. 生成过程</h3><span class="hint">讲授教师·问答 的生成进程</span>
+          </div>
+          <div class="gen-list">
+            <div class="gen done"><span class="g-no" style="background:var(--greenSoft);color:var(--green)">1</span><div class="g-body"><header><b>接收学生问题</b></header><small>10:21:58 · 3 条问题已汇总</small><div class="g-track"><i class="done" style="width:100%"></i></div></div><span class="g-pct" style="color:var(--green)">100%</span></div>
+            <div class="gen doing"><span class="g-no" style="background:var(--blueSoft);color:var(--blue2)">2</span><div class="g-body"><header><b>检索知识上下文</b></header><small>正在检索 Python 缩进规则…</small><div class="g-track"><i style="width:69%"></i></div></div><span class="g-pct" style="color:var(--blue2)">69%</span></div>
+            <div class="gen doing"><span class="g-no" style="background:var(--blueSoft);color:var(--blue2)">3</span><div class="g-body"><header><b>整合督导建议</b></header><small>建议已转化为回答要点</small><div class="g-track"><i style="width:60%"></i></div></div><span class="g-pct" style="color:var(--blue2)">60%</span></div>
+            <div class="gen doing"><span class="g-no" style="background:var(--blueSoft);color:var(--blue2)">4</span><div class="g-body"><header><b>分组问题生成</b></header><small>基础/进阶/拓展 三类已区分</small><div class="g-track"><i style="width:49%"></i></div></div><span class="g-pct" style="color:var(--blue2)">49%</span></div>
+            <div class="gen draft"><span class="g-no" style="background:var(--graySoft);color:var(--ink3)">5</span><div class="g-body"><header><b>验证并完善</b></header><small>正在检查回答覆盖与格式…</small><div class="g-track"><i class="draft" style="width:15%"></i></div></div><span class="g-pct" style="color:var(--ink3)">15%</span></div>
+            <div class="gen draft"><span class="g-no" style="background:var(--graySoft);color:var(--ink3)">6</span><div class="g-body"><header><b>最终输出</b></header><small>预计 10:22:30 完成</small><div class="g-track"><i class="draft" style="width:0%"></i></div></div><span class="g-pct" style="color:var(--ink3)">0%</span></div>
+            <div class="gen doing" style="border-style:dashed;background:#f8fafc"><span class="g-no" style="background:#0f172a;color:#93c5fd">⚙</span><div class="g-body"><header><b>dsh 网关 · agent_run</b><small>同 session 多轮记忆 · 第 3 轮迭代</small><div class="g-track"><i style="width:46%"></i></div></div><span class="g-pct" style="color:var(--blue2)">46%</span></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ===== 右侧节点详情 ===== -->
+    <aside class="right">
+      <section class="card node-detail" id="nodeDetail">
+        <!-- JS 动态填充 -->
+        <div id="ndContent"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+/* ============ 节点详情数据 ============ */
+const DETAILS = {
+  teacher: {
+    name:"讲授教师·问答", role:"生成回答 · 整合督导建议", color:"#2f6bff",
+    status:"进行中", badge:"进行中", badgeClass:"st-run", progress:68,
+    owner:"李老师", team:"团队B 课堂互动组", time1:"10:21:49 - 10:21:59", time2:"10:20:03 - 10:23:05",
+    dsh:`<span class="d-think">分析：3 个问题分别指向缩进规范、运行环境与编码边界。</span>
+<span class="d-tok">收到学生问题。基础学生问的是 Tab 和空格混用会不会报错；进阶学生想了解 IDLE 和命令行运行结果不一致的原因；拓展学生则关注跨系统换行符的影响。</span>
+<span class="d-tok">先回应基础问题：Python 对缩进极其敏感，PEP 8 推荐统一使用 4 个空格，混用 Tab 会在解释时抛 IndentationError。</span>
+<span class="d-tok">再解释 IDLE 差异：IDLE 会自动把 Tab 转为空格，而命令行终端不会，所以同一段代码在两处表现不同……</span>
+<span class="d-think">整合督导建议：需要给出排查步骤，而不是只讲原理。</span>
+<span class="d-tok">给出排查清单：①统一缩进 ②检查解释器路径 ③对比 IDLE 和终端行为 ④用 python -tt 检测混用。</span>`,
+    subs:[
+      {name:"知识检索", st:"运行中", cls:"s-run st-run", pct:69, meta:"正在检索 Python 缩进、Tab/空格区别…"},
+      {name:"督导建议整合", st:"已完成", cls:"s-done st-done", pct:100, meta:"建议已转化为回答要点，排序完成"},
+    ],
+    subs2:[
+      {name:"分组问题生成", st:"运行中", cls:"s-run st-run", pct:49, meta:"基础/进阶/拓展 三类问题已区分"},
+      {name:"示例代码生成", st:"草稿中", cls:"s-draft st-draft", pct:15, meta:"正在生成 S1 与 S2 代码示例"},
+    ],
+    path:[
+      {t:"接收学生问题", d:"3 条已汇总", cls:"p-done"},
+      {t:"检索知识", d:"缩进规则", cls:"p-done"},
+      {t:"验证完善", d:"覆盖与格式", cls:"p-act"},
+      {t:"最终输出", d:"预计 30 秒", cls:""},
+    ],
+    runtime:[
+      {name:"知识检索", time:"10:22:15", state:"运行中", done:false},
+      {name:"督导建议整合", time:"10:22:18", state:"已完成", done:true},
+      {name:"分组问题生成", time:"10:22:21", state:"进行中", done:false},
+      {name:"示例代码生成", time:"10:22:23", state:"草稿中", done:false},
+    ]
+  },
+  analyst: {
+    name:"教材分析员", role:"内容剖析 · 重难点", color:"#0ea5e9",
+    status:"已完成", badge:"已完成", badgeClass:"st-done", progress:100,
+    owner:"分析引擎", team:"团队A 备课设计组", time1:"10:08:12 - 10:11:40", time2:"—",
+    subs:[
+      {name:"全文分区扫描", st:"已完成", cls:"s-done st-done", pct:100, meta:"16 个章节分区已提取"},
+      {name:"重难点标记", st:"已完成", cls:"s-done st-done", pct:100, meta:"8 个重点 · 5 个难点"},
+    ],
+    subs2:[
+      {name:"常见误区识别", st:"已完成", cls:"s-done st-done", pct:100, meta:"Tab/空格、IDLE 差异等 6 项"},
+      {name:"知识结构图", st:"已完成", cls:"s-done st-done", pct:100, meta:"概念→语法→应用 三级"},
+    ],
+    path:[
+      {t:"接收教材", d:"已导入", cls:"p-done"},
+      {t:"分区扫描", d:"16 区", cls:"p-done"},
+      {t:"重难点标记", d:"已完成", cls:"p-done"},
+      {t:"输出清单", d:"已交付", cls:"p-done"},
+    ],
+    runtime:[
+      {name:"全文分区扫描", time:"10:08:20", state:"已完成", done:true},
+      {name:"重难点标记", time:"10:10:05", state:"已完成", done:true},
+      {name:"常见误区识别", time:"10:10:50", state:"已完成", done:true},
+      {name:"知识结构图", time:"10:11:12", state:"已完成", done:true},
+    ]
+  },
+  designer: {
+    name:"教学设计员", role:"目标 · 环节 · 练习", color:"#38bdf8",
+    status:"已完成", badge:"已完成", badgeClass:"st-done", progress:100,
+    owner:"设计引擎", team:"团队A 备课设计组", time1:"10:15:02 - 10:18:55", time2:"—",
+    subs:[
+      {name:"学习目标", st:"已完成", cls:"s-done st-done", pct:100, meta:"4 条可观测目标"},
+      {name:"教学环节", st:"已完成", cls:"s-done st-done", pct:100, meta:"导入→讲授→探究→评价"},
+    ],
+    subs2:[
+      {name:"分层练习", st:"已完成", cls:"s-done st-done", pct:100, meta:"三层练习 9 题"},
+      {name:"教案框架", st:"已完成", cls:"s-done st-done", pct:100, meta:"已交付讲授教师"},
+    ],
+    path:[
+      {t:"接收分析", d:"重难点", cls:"p-done"},
+      {t:"设计目标", d:"4 条", cls:"p-done"},
+      {t:"编排环节", d:"4 环节", cls:"p-done"},
+      {t:"输出教案", d:"已交付", cls:"p-done"},
+    ],
+    runtime:[
+      {name:"学习目标生成", time:"10:15:10", state:"已完成", done:true},
+      {name:"教学环节编排", time:"10:16:40", state:"已完成", done:true},
+      {name:"分层练习设计", time:"10:17:30", state:"已完成", done:true},
+      {name:"教案框架审定", time:"10:18:20", state:"已完成", done:true},
+    ]
+  },
+  frames: {
+    name:"讲授教案·框架", role:"教学环节审定", color:"#22c55e",
+    status:"已完成", badge:"已完成", badgeClass:"st-done", progress:100,
+    owner:"李老师", team:"团队A 备课设计组", time1:"10:18:30 - 10:18:52", time2:"—",
+    subs:[
+      {name:"环节审核", st:"已完成", cls:"s-done st-done", pct:100, meta:"4 个环节通过"},
+      {name:"时长校准", st:"已完成", cls:"s-done st-done", pct:100, meta:"合计 45 分钟"},
+    ],
+    subs2:[
+      {name:"目标对齐", st:"已完成", cls:"s-done st-done", pct:100, meta:"与教学大纲一致"},
+      {name:"交付确认", st:"已完成", cls:"s-done st-done", pct:100, meta:"已交付讲授教师"},
+    ],
+    path:[
+      {t:"接收教案", d:"初稿", cls:"p-done"},
+      {t:"环节审核", d:"4 环节", cls:"p-done"},
+      {t:"时长校准", d:"45min", cls:"p-done"},
+      {t:"交付", d:"已确认", cls:"p-done"},
+    ],
+    runtime:[
+      {name:"环节审核", time:"10:18:35", state:"已完成", done:true},
+      {name:"时长校准", time:"10:18:44", state:"已完成", done:true},
+      {name:"交付确认", time:"10:18:50", state:"已完成", done:true},
+    ]
+  },
+  stu_high: {
+    name:"进阶学生", role:"迁移问题", color:"#4ade80",
+    status:"进行中", badge:"进行中", badgeClass:"st-run", progress:76,
+    owner:"学生引擎", team:"团队B 课堂互动组", time1:"10:21:30 - 当前", time2:"—",
+    dsh:`<span class="d-tok">基于老师讲的缩进规则，设计一个迁移场景：如果把 if 分支内的代码全部改成 Tab 缩进、外层用空格，执行时会怎样？</span>
+<span class="d-tok">再构造一个反例：同一文件里先定义 tab 缩进函数、再定义空格缩进函数，Python 会如何判定？</span>
+<span class="d-think">需要确保问题能让学生联想到"一致性"这个本质。</span>`,
+    subs:[
+      {name:"知识迁移提问", st:"运行中", cls:"s-run st-run", pct:76, meta:"基于缩进规则设计迁移场景"},
+      {name:"反例构造", st:"运行中", cls:"s-run st-run", pct:50, meta:"构造 Tab/空格混用反例"},
+    ],
+    subs2:[
+      {name:"追问生成", st:"草稿中", cls:"s-draft st-draft", pct:20, meta:"生成深度追问"},
+      {name:"提交问题", st:"待启动", cls:"s-draft st-draft", pct:0, meta:"等待前置完成"},
+    ],
+    path:[
+      {t:"接收讲授", d:"缩进规则", cls:"p-done"},
+      {t:"构思问题", d:"迁移场景", cls:"p-act"},
+      {t:"构造反例", d:"进行中", cls:""},
+      {t:"提交", d:"待发送", cls:""},
+    ],
+    runtime:[
+      {name:"知识迁移提问", time:"10:21:35", state:"运行中", done:false},
+      {name:"反例构造", time:"10:21:52", state:"进行中", done:false},
+    ]
+  },
+  stu_base: {
+    name:"基础学生", role:"概念问题", color:"#f59e0b",
+    status:"进行中", badge:"进行中", badgeClass:"st-run", progress:64,
+    owner:"学生引擎", team:"团队B 课堂互动组", time1:"10:21:40 - 当前", time2:"—",
+    dsh:`<span class="d-tok">老师说的 4 个空格我记住了，但我不确定：如果代码里既有 Tab 又有空格，会直接报错吗？</span>
+<span class="d-tok">还有我在 IDLE 里运行成功，换成命令行就报 IndentationError，是不是我在两处敲的缩进不一样？</span>
+<span class="d-think">用最朴素的语言提问，贴合基础学生的疑惑点。</span>`,
+    subs:[
+      {name:"概念提问", st:"运行中", cls:"s-run st-run", pct:64, meta:"Tab/空格、运行差异"},
+      {name:"追问整理", st:"草稿中", cls:"s-draft st-draft", pct:30, meta:"将概念问题归类"},
+    ],
+    subs2:[
+      {name:"提交问题", st:"待启动", cls:"s-draft st-draft", pct:0, meta:"等待追问整理"},
+      {name:"—", st:"", cls:"s-draft st-draft", pct:0, meta:""},
+    ],
+    path:[
+      {t:"接收讲授", d:"缩进规则", cls:"p-done"},
+      {t:"提出疑问", d:"cmd/IDLE", cls:"p-act"},
+      {t:"整理", d:"归类中", cls:""},
+      {t:"提交", d:"待发送", cls:""},
+    ],
+    runtime:[
+      {name:"概念提问", time:"10:21:42", state:"运行中", done:false},
+      {name:"追问整理", time:"10:21:56", state:"进行中", done:false},
+    ]
+  },
+  stu_adv: {
+    name:"拓展学生", role:"边界问题", color:"#f87171",
+    status:"进行中", badge:"进行中", badgeClass:"st-run", progress:52,
+    owner:"学生引擎", team:"团队B 课堂互动组", time1:"10:21:50 - 当前", time2:"—",
+    dsh:`<span class="d-tok">Linux 和 Windows 的换行符不一样，会不会导致同一份 Python 源码运行结果不同？</span>
+<span class="d-think">跨界问题——要把"换行符差异"和"缩进差异"分开，避免学生混淆。</span>
+<span class="d-tok">追问：把 .py 文件用 Windows 记事本保存为 UTF-8 带 BOM，再在 Linux 下运行，是否影响缩进判定？</span>`,
+    subs:[
+      {name:"边界提问", st:"运行中", cls:"s-run st-run", pct:52, meta:"换行符/编码影响"},
+      {name:"跨平台对比", st:"草稿中", cls:"s-draft st-draft", pct:25, meta:"Win/Linux 差异"},
+    ],
+    subs2:[
+      {name:"提交问题", st:"待启动", cls:"s-draft st-draft", pct:0, meta:"等待前置"},
+      {name:"—", st:"", cls:"s-draft st-draft", pct:0, meta:""},
+    ],
+    path:[
+      {t:"接收讲授", d:"缩进规则", cls:"p-done"},
+      {t:"边界提问", d:"跨平台", cls:"p-act"},
+      {t:"对比", d:"整理中", cls:""},
+      {t:"提交", d:"待发送", cls:""},
+    ],
+    runtime:[
+      {name:"边界提问", time:"10:21:55", state:"运行中", done:false},
+      {name:"跨平台对比", time:"10:22:06", state:"进行中", done:false},
+    ]
+  },
+  supervisor: {
+    name:"教学督导", role:"评分 · 改进建议", color:"#a78bfa",
+    status:"运行中", badge:"运行中", badgeClass:"st-run", progress:41,
+    owner:"督导引擎", team:"团队C 督导优化组", time1:"10:22:05 - 当前", time2:"—",
+    dsh:`<span class="d-think">先收集本轮课堂证据，再按三维度打分。</span>
+<span class="d-tok">已收集：学生对缩进规则的 3 条提问、讲授教师的初步回答（含排查清单）、督导上轮遗留建议。</span>
+<span class="d-tok">教学设计维度：环节完整 92；讲授方式：术语准确、举例贴近生活 88；回答质量：给出了可操作排查步骤 90。</span>
+<span class="d-think">综合建议：下一轮补充"缩进一致性"的可视化对比，让学生亲手改错。</span>
+<span class="d-tok">生成下一轮优化提示词：请围绕缩进一致性，用 3 行内的正反例强化"统一 4 空格"的认知。</span>`,
+    subs:[
+      {name:"课堂证据收集", st:"运行中", cls:"s-run st-run", pct:60, meta:"收集讲授/提问/答疑记录"},
+      {name:"维度评分", st:"草稿中", cls:"s-draft st-draft", pct:30, meta:"教学设计/讲授/回答质量"},
+    ],
+    subs2:[
+      {name:"改进建议", st:"待启动", cls:"s-draft st-draft", pct:0, meta:"等评分完成"},
+      {name:"迭代提示词", st:"待启动", cls:"s-draft st-draft", pct:0, meta:"下一轮优化"},
+    ],
+    path:[
+      {t:"收集证据", d:"3 类", cls:"p-done"},
+      {t:"维度评分", d:"进行中", cls:"p-act"},
+      {t:"生成建议", d:"待完成", cls:""},
+      {t:"输出点评", d:"待交付", cls:""},
+    ],
+    runtime:[
+      {name:"课堂证据收集", time:"10:22:09", state:"运行中", done:false},
+      {name:"维度评分", time:"10:22:18", state:"进行中", done:false},
+    ]
+  },
+  finalizer: {
+    name:"成果整理员", role:"汇总交付", color:"#94a3b8",
+    status:"待启动", badge:"待启动", badgeClass:"st-draft", progress:0,
+    owner:"汇总引擎", team:"团队A 备课设计组", time1:"—", time2:"—",
+    subs:[
+      {name:"等待上游", st:"待启动", cls:"s-draft st-draft", pct:0, meta:"等督导点评完成"},
+      {name:"—", st:"", cls:"s-draft st-draft", pct:0, meta:""},
+    ],
+    subs2:[
+      {name:"—", st:"", cls:"s-draft st-draft", pct:0, meta:""},
+      {name:"—", st:"", cls:"s-draft st-draft", pct:0, meta:""},
+    ],
+    path:[
+      {t:"接收成果", d:"待启动", cls:""},
+      {t:"汇总", d:"待启动", cls:""},
+      {t:"校验", d:"待启动", cls:""},
+      {t:"交付", d:"待启动", cls:""},
+    ],
+    runtime:[
+      {name:"等待上游任务", time:"—", state:"待启动", done:false},
+      {name:"—", time:"", state:"", done:true},
+    ]
+  }
+};
+
+/* ============ 渲染右侧详情 ============ */
+function renderDetail(key, el){
+  const d = DETAILS[key]; if(!d) return;
+  const rate = (c,cls,pct,w)=>`<div class="g-body"><div class="g-track"><i class="${w}" style="width:${pct}%"></i></div></div>`;
+  document.getElementById('ndContent').innerHTML = `
+  <div class="nd-head">
+    <span class="nd-ico" style="background:linear-gradient(135deg,${d.color},${d.color}cc)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 12l2.5 2.5L15.5 10"/></svg>
+    </span>
+    <div class="nd-title"><strong>${d.name}</strong><small>${d.role}</small></div>
+    <span class="nd-badge ${d.badgeClass}">${d.badge}</span>
+    <button class="nd-close" onclick="document.getElementById('nodeDetail').style.display='none'" title="收起详情">✕</button>
+  </div>
+  <div class="nd-meta">
+    <div class="nd-ring">
+      <div class="ring">
+        <svg viewBox="0 0 52 52">
+          <circle cx="26" cy="26" r="21" fill="none" stroke="#edf2f9" stroke-width="5"/>
+          <circle cx="26" cy="26" r="21" fill="none" stroke="${d.color}" stroke-width="5" stroke-linecap="round"
+            stroke-dasharray="${d.progress*1.32} 132" transform="rotate(-90 26 26)"/>
+          <text x="26" y="31" text-anchor="middle">${d.progress}%</text>
+        </svg>
+      </div>
+      <div class="ring-info"><b>${d.status === '待启动' ? '等待上游任务' : '任务执行中'}</b><small>点击流程图节点切换不同智能体</small></div>
+    </div>
+    <div class="m-row"><b>负责人</b><span>${d.owner}</span></div>
+    <div class="m-row"><b>所属团队</b><span>${d.team}</span></div>
+    <div class="m-row"><b>起止时间</b><span><em>${d.time1}</em></span></div>
+    <div class="m-row"><b>计划窗口</b><span><em>${d.time2}</em></span></div>
+  </div>
+  <div class="nd-scroll">
+    ${d.dsh ? `
+    <div class="nd-sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>dsh 生成过程 <span class="live">● 实时流</span></div>
+    <div class="dsh-stream">
+      <div class="dsh-head">
+        <span class="d-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 12h10M7 8h6"/></svg></span>
+        <b>dsh-agent · ${d.name} · deepseek-v4-flash</b>
+        <span class="d-state">生成中</span>
+      </div>
+      <div class="dsh-body" id="dshStream">${d.dsh}<span class="d-cursor"></span></div>
+      <div class="dsh-call"><span class="dot"></span>调用 <em>generate</em> · 上下文 3.2k tok · 输出 812 tok · 第 3/5 轮</div>
+    </div>
+    `:''}
+    <div class="nd-sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg>子智能体实时输出</div>
+    <div class="sub-grid">
+      <div class="sub-card active-sub"><header><b>${d.subs[0].name||'—'}</b><span class="st ${d.subs[0].cls.split(' ')[1]||''}">${d.subs[0].st}</span></header>
+        <div class="s-track"><i class="${d.subs[0].cls.split(' ')[0]}" style="width:${d.subs[0].pct}%"></i></div>
+        <small class="s-meta">${d.subs[0].meta}</small></div>
+      <div class="sub-card"><header><b>${d.subs[1].name||'—'}</b><span class="st ${d.subs[1].cls.split(' ')[1]||''}">${d.subs[1].st}</span></header>
+        <div class="s-track"><i class="${d.subs[1].cls.split(' ')[0]}" style="width:${d.subs[1].pct}%"></i></div>
+        <small class="s-meta">${d.subs[1].meta}</small></div>
+      <div class="sub-card"><header><b>${d.subs2[0].name||'—'}</b><span class="st ${d.subs2[0].cls.split(' ')[1]||''}">${d.subs2[0].st}</span></header>
+        <div class="s-track"><i class="${d.subs2[0].cls.split(' ')[0]}" style="width:${d.subs2[0].pct}%"></i></div>
+        <small class="s-meta">${d.subs2[0].meta}</small></div>
+      <div class="sub-card"><header><b>${d.subs2[1].name||'—'}</b><span class="st ${d.subs2[1].cls.split(' ')[1]||''}">${d.subs2[1].st}</span></header>
+        <div class="s-track"><i class="${d.subs2[1].cls.split(' ')[0]}" style="width:${d.subs2[1].pct}%"></i></div>
+        <small class="s-meta">${d.subs2[1].meta}</small></div>
+    </div>
+    <div class="nd-sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5z"/></svg>生成过程路径</div>
+    <div class="path-flow">
+      ${d.path.map((p,i)=>`<div class="path-step ${p.cls}"><b>${p.t}</b><small>${p.d}</small></div>${i<d.path.length-1?'<span class="path-arrow">→</span>':''}`).join('')}
+    </div>
+    <div class="nd-sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>正在进行中的子智能体任务</div>
+    <div class="runtime-list">
+      ${d.runtime.map(r=>`<div class="runtime ${r.done?'done':''}"><span class="sp"></span><div class="r-body"><b>${r.name}</b><small>${r.time}</small></div><span class="r-state">${r.state}</span></div>`).join('')}
+    </div>
+  </div>
+  <div class="nd-actions">
+    <button class="primary">▶ 继续执行</button>
+    <button class="secondary">✎ 插入修改意见</button>
+    <button class="danger">⇄ 切换接管</button>
+  </div>`;
+}
+
+/* 节点点击 → 详情切换 */
+document.querySelectorAll('.node').forEach(node => {
+  node.addEventListener('click', () => {
+    document.querySelectorAll('.node').forEach(n => n.classList.remove('active'));
+    node.classList.add('active');
+    document.getElementById('nodeDetail').style.display = '';
+    renderDetail(node.dataset.agent);
+  });
+});
+
+/* 消息流开关（隐藏/显示 A 通信面板 + 连线的消息流层由 CSS 动画体现） */
+document.getElementById('msgSwitch').addEventListener('click', function(){
+  this.classList.toggle('on');
+  const on = this.classList.contains('on');
+  document.getElementById('panelChat').style.display = on ? '' : 'none';
+  document.querySelectorAll('.flow-lines .msg, .flow-lines .stream').forEach(p => p.style.display = on ? '' : 'none');
+  document.querySelectorAll('.flow-lines .super').forEach(p => p.style.display = on ? '' : 'none');
+});
+
+/* 全局查看（缩放流程图） */
+document.getElementById('zoomBtn').addEventListener('click', function(){
+  const canvas = document.getElementById('flowCanvas');
+  canvas.classList.toggle('zoomed');
+  this.classList.toggle('active');
+  this.style.borderColor = canvas.classList.contains('zoomed') ? 'var(--blue2)' : '';
+  this.style.color = canvas.classList.contains('zoomed') ? 'var(--blue2)' : '';
+});
+
+/* 默认渲染讲授教师·问答 */
+renderDetail('teacher');
+
+/* ============ 打字机动画: dsh 流逐字显示 ============ */
+const STREAM_TEXTS = {
+  teacher: "老师，三个问题我一起回答：\n① Tab和空格混用 → PEP8 统一 4 空格，混用抛 IndentationError；\n② IDLE 会自动把 Tab 转空格，命令行不会，所以同一代码两处表现不同；\n③ 跨系统换行符：Python 会忽略 CRLF/LF 差异，但 UTF-8 BOM 可能触发 SyntaxError，建议保存为无 BOM。\n\n整合督导建议，补充排查步骤：统一缩进 → 验证解释器 → python -tt 检测混用 → 保存无 BOM UTF-8。",
+  supervisor: "本轮课堂综合评价：90 分。\n设计 92 · 讲授 88 · 答疑 90。\n优点：问题分层清晰，回答给出可操作的排查清单。\n不足：缺少缩进一致性的可视化对比。\n下一轮重点：用 3 行正反例强化『统一 4 空格』认知。",
+  stu_high: "迁移问题：如果 if 分支内用 Tab、外层用空格，Python 如何判定缩进层级？\n反例：同一文件先定义 Tab 缩进函数、再定义空格缩进函数，会怎样？",
+  stu_base: "老师，代码里既有 Tab 又有空格会直接报错吗？\n我在 IDLE 成功、命令行报 IndentationError，是不是我敲的缩进不一样？",
+  stu_adv: "Linux/Windows 换行符不同，会影响同一份源码的运行结果吗？\nWindows 记事本存成 UTF-8 带 BOM，在 Linux 下运行是否影响缩进判定？"
+};
+function typeStream(el, text, speed){
+  const body = el.querySelector('.dsh-body');
+  body.innerHTML = `<span class="d-cursor"></span>`;
+  let i = 0;
+  const timer = setInterval(() => {
+    if (i >= text.length) { clearInterval(timer); body.innerHTML = text.replace(/\n/g,'<br>'); return; }
+    body.innerHTML = text.slice(0, ++i).replace(/\n/g,'<br>') + '<span class="d-cursor"></span>';
+    body.scrollTop = body.scrollHeight;
+  }, speed || 26);
+}
+function startStreamFor(key){
+  const el = document.querySelector('.dsh-stream');
+  if (!el) return;
+  const text = STREAM_TEXTS[key];
+  if (text) typeStream(el, text, key==='teacher'?16:24);
+  else {
+    const body = el.querySelector('.dsh-body');
+    if (body && body.textContent.trim().length===0) body.innerHTML = `<span class="d-tok">初始化 dsh 会话…</span><span class="d-cursor"></span>`;
+  }
+}
+/* 覆盖 renderDetail: 在渲染后触发 dsh 流 */
+const _origRender = renderDetail;
+renderDetail = function(key, el){
+  _origRender(key, el);
+  startStreamFor(key);
+};
+startStreamFor('teacher');
+</script>
+</body>
+</html>
