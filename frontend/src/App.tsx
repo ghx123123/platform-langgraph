@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, BookOpen, CheckCircle2, ChevronDown, Copy, StopCircle, Clock3,
-  FileCheck2, FileDown, FileText, FolderOpen, GraduationCap, Hand, Layers3, Link2, ListChecks, Loader2, MessageCircleQuestion, Play, Plus,
-  PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Radio, RefreshCw, Repeat, ScanSearch, Send, ShieldCheck, Upload, Users, X,
+  FileCheck2, FileDown, FileText, FolderOpen, Hand, Layers3, Link2, ListChecks, Loader2, MessageCircleQuestion, Play, Plus,
+  PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Radio, RefreshCw, Repeat, ScanSearch, Send, ShieldCheck, Upload, X,
 } from 'lucide-react';
-import { Markdown } from './components/Markdown';
 import { ModelSettingsPanel } from './components/ModelSettingsPanel';
 import { KnowledgePointEditor } from './components/KnowledgePointEditor';
 import { TeachingScopePlanner } from './components/TeachingScopePlanner';
@@ -13,6 +12,7 @@ import { TeachingProgress } from './components/TeachingProgress';
 import { TeacherMaterialsWorkspace } from './components/TeacherMaterialsWorkspace';
 import { DocumentPreviewWorkspace } from './components/DocumentPreviewWorkspace';
 import { GenerationStatusPanel } from './components/GenerationStatusPanel';
+import { AgentFlowWorkspace } from './components/AgentFlowWorkspace';
 import { CourseArchiveWorkspace } from './components/CourseArchiveWorkspace';
 import { ExportWorkspace } from './components/ExportWorkspace';
 import { DataHubWorkspace } from './components/DataHubWorkspace';
@@ -25,7 +25,7 @@ import { WelcomePanel } from './components/WelcomePanel';
 import { DEMO_COURSE } from './lib/demoCourse';
 import { useWorkflowEvents } from './hooks/useWorkflowEvents';
 import { courseArchiveApi, courseDesignApi, dataHubApi, documentApi, getErrorMessage, modelSettingsApi, workflowApi } from './lib/api';
-import type { ArchiveDeletionResult, CourseArchiveDetail, CourseArchiveSummary, CourseDesignRecord, CourseDesignSummary, DataHubBlock, DocumentVisualAnalysis, InterventionPoint, KnowledgePoint, ModelSettings, ParsedDocument, PendingInput, PreparationPack, PrepareArchiveInput, ResumeInput, RunEvent, SupervisorReview, TeachingData, TeachingMessage, TeachingPhase, TeachingScope, WorkflowRun } from './types/workflow';
+import type { ArchiveDeletionResult, CourseArchiveDetail, CourseArchiveSummary, CourseDesignRecord, CourseDesignSummary, DataHubBlock, DocumentVisualAnalysis, InterventionPoint, KnowledgePoint, ModelSettings, ParsedDocument, PendingInput, PreparationPack, PrepareArchiveInput, ResumeInput, RunEvent, TeachingData, TeachingMessage, TeachingPhase, TeachingScope, WorkflowRun } from './types/workflow';
 
 const phases: Array<{ key: string; phase: TeachingPhase; name: string; short: string }> = [
   { key: 'content_analysis', phase: 'design', name: '内容剖析', short: '重难点' },
@@ -36,10 +36,7 @@ const phases: Array<{ key: string; phase: TeachingPhase; name: string; short: st
   { key: 'supervisor_comment', phase: 'supervisor_comment', name: '督导点评', short: '评价改进' },
 ];
 const terminalStatuses = new Set(['completed', 'failed', 'cancelled']);
-const phaseNames: Record<TeachingPhase, string> = { design: '教学设计', teach_knowledge: '教师讲授', student_question: '学生提问', teacher_answer: '教师答疑', supervisor_comment: '督导点评', iteration_complete: '本轮完成' };
 const levelNames: Record<string, string> = { high: '拓展型', medium: '进阶型', low: '基础型' };
-/** 超过该字数的消息默认折叠，避免讲授稿淹没整个对话流 */
-const COLLAPSE_THRESHOLD = 320;
 type WorkspaceView = 'material' | 'process' | 'result';
 type ExportSubpage = 'compose' | 'lesson';
 type MaterialSubpage = 'units' | 'preparation';
@@ -123,101 +120,6 @@ function eventTeachingData(run: WorkflowRun | null, events: RunEvent[]): Teachin
   return data;
 }
 
-function splitSupervisorPoints(value: string | undefined): string[] {
-  return (value || '')
-    .replace(/\r/g, '')
-    .split(/\n+|；|;/)
-    .map((item) => item.replace(/^\s*(?:[-*•]|\d+[.、)])\s*/, '').trim())
-    .filter(Boolean);
-}
-
-function parseSupervisorContent(content: string): { strengths: string[]; weaknesses: string[]; suggestions: string[] } {
-  const sections = { strengths: [] as string[], weaknesses: [] as string[], suggestions: [] as string[] };
-  const labels = /(亮点|优点|教学亮点|不足|问题|薄弱点|改进建议|建议|下一轮重点)[:：]/g;
-  const matches = Array.from(content.matchAll(labels));
-  matches.forEach((match, index) => {
-    const label = match[1];
-    const start = (match.index || 0) + match[0].length;
-    const end = index + 1 < matches.length ? (matches[index + 1].index || content.length) : content.length;
-    const items = splitSupervisorPoints(content.slice(start, end));
-    const key = ['亮点', '优点', '教学亮点'].includes(label)
-      ? 'strengths'
-      : ['不足', '问题', '薄弱点'].includes(label) ? 'weaknesses' : 'suggestions';
-    sections[key].push(...items);
-  });
-  return sections;
-}
-
-function supervisorSections(content: string, review?: SupervisorReview) {
-  const parsed = parseSupervisorContent(content);
-  const strengths = review?.strengths?.length ? review.strengths : parsed.strengths;
-  const suggestions = review?.suggestions?.length ? review.suggestions : parsed.suggestions;
-  const weaknesses = review?.weaknesses?.length
-    ? review.weaknesses
-    : parsed.weaknesses.length
-      ? parsed.weaknesses
-      : suggestions.map((item) => item.split(/建议|可考虑|应当|应在/)[0].trim() || item);
-  const nextFocus = review?.next_focus || '';
-  return {
-    strengths: strengths.slice(0, 6),
-    weaknesses: weaknesses.slice(0, 6),
-    suggestions: [...suggestions, ...(nextFocus ? [`下一轮重点：${nextFocus}`] : [])].slice(0, 6),
-  };
-}
-
-function SupervisorSummary({ content, review }: { content: string; review?: SupervisorReview }) {
-  const sections = supervisorSections(content, review);
-  const items = [
-    { key: 'strengths', title: '优点', icon: <CheckCircle2 size={13} /> },
-    { key: 'weaknesses', title: '不足', icon: <AlertCircle size={13} /> },
-    { key: 'suggestions', title: '建议', icon: <ListChecks size={13} /> },
-  ] as const;
-  return (
-    <div className="supervisor-summary">
-      {items.map((section) => {
-        const points = sections[section.key];
-        return (
-          <section key={section.key} className={`supervisor-section supervisor-section-${section.key}`}>
-            <h4>{section.icon}<span>{section.title}</span><small>{Math.min(points.length, 3)}</small></h4>
-            <ul>{(points.length ? points.slice(0, 3) : ['本轮未单独列出']).map((point, index) => <li key={`${section.key}-${index}`}>{point}</li>)}</ul>
-            {points.length > 3 && <em>已收束显示前 3 条重点</em>}
-          </section>
-        );
-      })}
-      <details className="supervisor-raw"><summary>查看完整督导记录</summary><div><Markdown>{content}</Markdown></div></details>
-    </div>
-  );
-}
-
-function MessageCard({ message, supervisorReview }: { message: TeachingMessage; supervisorReview?: SupervisorReview }) {
-  const isSupervisor = message.agent_type === 'supervisor';
-  const long = !isSupervisor && message.content.length > COLLAPSE_THRESHOLD;
-  const [open, setOpen] = useState(!long);
-  const [copied, setCopied] = useState(false);
-  const mine = message.agent_id === 'user';
-  const icon = mine ? <Hand size={16} /> : message.agent_type === 'teacher' ? <GraduationCap size={16} /> : message.agent_type === 'student' ? <Users size={16} /> : <ShieldCheck size={16} />;
-  const level = message.level ? levelNames[message.level] : null;
-  return (
-    <article className={`chat-row role-${message.agent_type} ${mine ? 'is-user' : ''}`}>
-      <div className="chat-avatar" title={message.agent_name}>{icon}</div>
-      <div className="chat-bubble">
-        <header>
-          <strong>{message.agent_name}</strong>
-          {level && <span className={`level level-${message.level}`}>{level}</span>}
-          <span className="chat-phase">{phaseNames[message.phase]}</span>
-          <button type="button" className="chat-copy" onClick={() => void navigator.clipboard.writeText(message.content).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1400); }).catch(() => undefined)} title="复制这条内容" aria-label="复制这条内容">{copied ? <CheckCircle2 size={12} /> : <Copy size={12} />}</button>
-          {long && (
-            <button type="button" className="chat-toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-              <ChevronDown size={12} className={open ? 'rotated' : ''} />{open ? '收起' : `展开全文 · ${message.content.length} 字`}
-            </button>
-          )}
-        </header>
-        <div className={`chat-content ${open ? '' : 'collapsed'}`}>{isSupervisor ? <SupervisorSummary content={message.content} review={supervisorReview} /> : <Markdown>{message.content}</Markdown>}</div>
-      </div>
-    </article>
-  );
-}
-
 /** 流程停在断点时的介入面板：教学设计评审与答疑分工两种形态 */
 function InterventionPanel({ pending, value, onChange, busy, onSubmit }: {
   pending: PendingInput;
@@ -283,68 +185,6 @@ function groupByIteration(messages: TeachingMessage[]) {
     else groups.push({ iteration: message.iteration, items: [message] });
   });
   return groups;
-}
-
-type AgentType = TeachingMessage['agent_type'];
-type MessageGroup = { iteration: number; items: TeachingMessage[] };
-interface ActiveAgent {
-  type: AgentType;
-  name: string;
-  hint: string;
-}
-
-const agentColumnDetails: Array<{ type: AgentType; label: string; description: string }> = [
-  { type: 'teacher', label: '教师', description: '分析、设计与讲授' },
-  { type: 'student', label: '学生', description: '分层问题与反馈' },
-  { type: 'supervisor', label: '督导', description: '质量检查与改进' },
-];
-
-function AgentIcon({ type, size = 16 }: { type: AgentType; size?: number }) {
-  if (type === 'teacher') return <GraduationCap size={size} />;
-  if (type === 'student') return <Users size={size} />;
-  return <ShieldCheck size={size} />;
-}
-
-function AgentColumn({ type, label, description, groups, activeAgent, reviews }: {
-  type: AgentType;
-  label: string;
-  description: string;
-  groups: MessageGroup[];
-  activeAgent: ActiveAgent | null;
-  reviews: Record<number, SupervisorReview>;
-}) {
-  const messageCount = groups.reduce((total, group) => total + group.items.length, 0);
-  const isWorking = activeAgent?.type === type;
-  return (
-    <article className={`agent-column agent-column-${type} ${isWorking ? 'is-working' : ''}`}>
-      <header className="agent-column-header">
-        <div className="agent-column-icon"><AgentIcon type={type} size={17} /></div>
-        <div>
-          <strong>{label}</strong>
-          <small>{isWorking ? `正在${activeAgent?.hint.replace(/^正在/, '') || '处理'}` : description}</small>
-        </div>
-        <span className="agent-column-count">{messageCount}</span>
-      </header>
-      <div className="agent-column-stream" aria-label={`${label}消息`}>
-        {groups.length === 0 && !isWorking ? (
-          <div className="agent-column-empty"><AgentIcon type={type} size={18} /><span>本轮暂无消息</span><small>相关内容生成后会显示在这里</small></div>
-        ) : (
-          groups.map((group, groupIndex) => (
-            <section key={`${group.iteration}-${groupIndex}`} className="round-group">
-              <div className="round-divider"><span>{group.iteration === 0 ? '教学准备' : `第 ${group.iteration} 轮`}</span></div>
-              {group.items.map((message, messageIndex) => <MessageCard key={`${message.id}-${group.iteration}-${messageIndex}`} message={message} supervisorReview={type === 'supervisor' ? reviews[message.iteration] : undefined} />)}
-            </section>
-          ))
-        )}
-        {isWorking && (
-          <div className={`chat-typing role-${type}`}>
-            <div className="chat-avatar"><AgentIcon type={type} size={16} /></div>
-            <div className="typing-body"><strong>{activeAgent?.name}</strong><span>{activeAgent?.hint}</span><i /><i /><i /></div>
-          </div>
-        )}
-      </div>
-    </article>
-  );
 }
 
 function App() {
@@ -570,29 +410,6 @@ function App() {
   const messages = teaching.messages || [];
   const messageGroups = useMemo(() => groupByIteration(messages), [messages]);
   const latestIteration = messageGroups[messageGroups.length - 1]?.iteration ?? 0;
-  const visibleMessageGroups = messageView === 'all'
-    ? messageGroups
-    : messageGroups.filter((group) => group.iteration === (messageView === 'latest' ? latestIteration : messageView));
-  const messagesByAgent = useMemo(() => {
-    const grouped: Record<AgentType, MessageGroup[]> = { teacher: [], student: [], supervisor: [] };
-    visibleMessageGroups.forEach((group) => {
-      agentColumnDetails.forEach(({ type }) => {
-        const items = group.items.filter((message) => message.agent_type === type);
-        if (items.length > 0) grouped[type].push({ iteration: group.iteration, items });
-      });
-    });
-    return grouped;
-  }, [visibleMessageGroups]);
-  const reviewsByIteration = useMemo(() => {
-    const grouped: Record<number, SupervisorReview> = {};
-    events.forEach((event) => {
-      if (!event.payload.review) return;
-      const iteration = Number(event.payload.iteration);
-      if (Number.isFinite(iteration)) grouped[iteration] = event.payload.review as SupervisorReview;
-    });
-    if (selectedRun?.review) grouped[latestIteration] = selectedRun.review;
-    return grouped;
-  }, [events, latestIteration, selectedRun?.review]);
   const previewDocument = useMemo(() => {
     if (parsedDoc) return {
       documentId: parsedDoc.document_id,
@@ -891,21 +708,6 @@ function App() {
   }, [events]);
 
 
-  /** 运行中时，把当前节点翻译成"谁在做什么"，让等待过程可解释 */
-  const activeAgent = useMemo(() => {
-    if (!selectedRun || !['queued', 'running'].includes(selectedRun.status)) return null;
-    const map: Record<string, { type: 'teacher' | 'student' | 'supervisor'; name: string; hint: string }> = {
-      content_analysis: { type: 'teacher', name: '课程内容教师', hint: '正在剖析课程材料的知识结构与重难点' },
-      teaching_design: { type: 'teacher', name: '教学设计教师', hint: '正在设计教学目标与课堂环节' },
-      teach_knowledge: { type: 'teacher', name: '课程教师', hint: '正在准备本轮讲授内容' },
-      student_question: { type: 'student', name: '分层学生', hint: '三类学生正在同时组织问题' },
-      teacher_answer: { type: 'teacher', name: '课程教师', hint: '正在逐一回应学生疑问' },
-      supervisor_comment: { type: 'supervisor', name: '教学督导', hint: '正在评价本轮课堂并给出改进建议' },
-      finalize: { type: 'supervisor', name: '教学督导', hint: '正在汇总教学设计成果' },
-    };
-    return map[liveNode] || null;
-  }, [liveNode, selectedRun?.status]);
-
   const exportReport = async (format: 'md' | 'pdf', variant: 'teacher' | 'student' = 'teacher') => {
     if (!selectedRun) return;
     setError(null);
@@ -1104,9 +906,11 @@ function App() {
                      ) : null}
                    </div>
                  ) : (
-                   <section className="collaboration-board" aria-label="教师、学生与督导协作过程">
-                      {agentColumnDetails.map((column) => <AgentColumn key={column.type} {...column} groups={messagesByAgent[column.type]} activeAgent={activeAgent} reviews={reviewsByIteration} />)}
-                   </section>
+                   <AgentFlowWorkspace
+                     run={selectedRun}
+                     events={events}
+                     messages={messages}
+                   />
                  )}
                  {(selectedRun?.status === 'paused' && selectedRun.pending_input) && <div className="process-action-zone"><InterventionPanel pending={selectedRun.pending_input} value={resumeText} onChange={setResumeText} busy={resuming} onSubmit={submitResume} /></div>}
                  {selectedRun?.status === 'completed' && <div className="process-action-zone"><div className="intervene-card next-round"><header><Repeat size={15} /><strong>打磨同一教学设计</strong><small>下一轮保留当前知识范围，先按督导建议重做教学设计，再生成新的讲授方案</small></header><textarea value={resumeText} onChange={(event) => setResumeText(event.target.value)} rows={2} placeholder="可选：补充本轮要优化的教学策略、示例或时间分配；留空则沿用督导提示词" /><div className="intervene-actions"><button type="button" className="primary-button" disabled={resuming} onClick={() => void appendRound()}>{resuming ? <Loader2 className="spin" size={15} /> : <Repeat size={15} />}再跑一轮</button></div></div></div>}

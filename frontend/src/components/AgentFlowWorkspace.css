@@ -1,0 +1,125 @@
+/* AgentFlowWorkspace — 多智能体协作流程视图 */
+.afw-root{display:flex;flex-direction:column;gap:10px;min-height:100%;padding:12px;background:#f7f9fc;border-radius:12px}
+.afw-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.afw-top-title{display:grid;gap:2px}
+.afw-top-title h3{margin:0;font-size:15px}
+.afw-top-title span{color:#94a3b8;font-size:10.5px}
+.afw-top-progress{display:flex;align-items:center;gap:8px}
+.afw-progress-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:99px;font-size:10.5px;font-weight:600}
+.afw-progress-pill.run{color:#1468e8;background:#eaf2ff}
+.afw-progress-pill.done{color:#16a34a;background:#e9f9ef}
+.afw-progress-pill.wait{color:#d97706;background:#fdf3e3}
+.afw-progress-pct{font-size:11px;color:#64748b;font-family:monospace}
+
+.afw-body{flex:1;min-height:0;display:grid;grid-template-columns:200px minmax(0,1fr) 320px;gap:12px}
+/* 左: 名册 */
+.afw-roster{display:flex;flex-direction:column;gap:6px;min-height:0}
+.afw-roster-head{font-size:12px;font-weight:700;color:#1e293b;display:flex;justify-content:space-between;align-items:center}
+.afw-roster-head span{background:#eaf2ff;color:#1468e8;border-radius:99px;padding:1px 7px;font-size:10px}
+.afw-roster-list{display:grid;gap:5px;overflow:auto}
+.afw-member{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid #e3e8f0;border-radius:10px;background:#fff;width:100%;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.afw-member:hover{border-color:#c8dcff}
+.afw-member.active{border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,.09)}
+.afw-member-ico{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:#fff;flex:none}
+.afw-member-info{flex:1;min-width:0;display:grid;gap:1px}
+.afw-member-info b{font-size:11.5px;color:#1e293b}
+.afw-member-info small{color:#94a3b8;font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.afw-member-state{font-size:9.5px;font-weight:600;flex:none;display:flex;align-items:center;gap:4px}
+.state-done .afw-member-state,.afw-member-state.state-done{color:#16a34a}
+.afw-member-state.state-running{color:#1468e8}
+.afw-member-state.state-waiting{color:#94a3b8}
+.afw-roster-foot{font-size:10px;color:#94a3b8;text-align:center;padding-top:4px}
+
+/* 中: 流程图 */
+.afw-canvas-wrap{position:relative;border:1px solid #e3e8f0;border-radius:12px;background:#fbfcfe;overflow:hidden;min-height:0}
+.afw-edges{position:absolute;inset:0}
+.afw-edge{fill:none;stroke:#5a8ef0;stroke-width:1.5;stroke-dasharray:6 5;animation:afw-dash 1.2s linear infinite;opacity:.75}
+.afw-edge.done{stroke:#34c07c;stroke-dasharray:none;animation:none;opacity:1}
+.afw-edge-extra{stroke:#93b4f5;stroke-width:1.8}
+.afw-edge-super{stroke:#a78bfa;stroke-dasharray:2 5}
+@keyframes afw-dash{to{stroke-dashoffset:-22}}
+.afw-nodes{position:absolute;inset:0}
+.afw-node{position:absolute;width:150px;padding:8px 10px;display:flex;gap:8px;align-items:center;border-radius:11px;background:#fff;border:1.2px solid #e3e8f0;box-shadow:0 4px 16px rgba(15,23,42,.07);cursor:pointer;text-align:left;transition:box-shadow .15s,transform .15s}
+.afw-node:hover{box-shadow:0 10px 32px rgba(15,23,42,.12);transform:translateY(-1px)}
+.afw-node.active{outline:2.5px solid #9db9f7;outline-offset:2px}
+.afw-node.state-done{border-color:#bfe8cf}
+.afw-node.state-running{border-color:#a7c4f9}
+.afw-node.state-waiting{border-style:dashed;border-color:#cbd5e1}
+.afw-node-frame{position:absolute;inset:-3px;border-radius:14px;border:1.5px solid transparent;pointer-events:none;animation:afw-pulse 2.2s ease-in-out infinite}
+@keyframes afw-pulse{0%,100%{border-color:rgba(47,107,255,0);box-shadow:0 0 0 0 rgba(47,107,255,0)}50%{border-color:rgba(47,107,255,.45);box-shadow:0 0 0 6px rgba(47,107,255,.06)}}
+.afw-node-ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;flex:none;position:relative}
+.afw-node-ico .afw-node-dot{position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;border:2px solid #fff}
+.state-done .afw-node-ico .afw-node-dot{background:#16a34a}
+.state-running .afw-node-ico .afw-node-dot{background:#1468e8;animation:afw-blink 1.2s ease-in-out infinite}
+.state-waiting .afw-node-ico .afw-node-dot{background:#cbd5e1}
+@keyframes afw-blink{0%,100%{opacity:1}50%{opacity:.25}}
+.afw-node-txt{min-width:0;display:grid;gap:1px}
+.afw-node-txt b{font-size:12px;color:#1e293b}
+.afw-node-txt small{color:#94a3b8;font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.afw-node-txt em{font-style:normal;font-size:9.5px;font-weight:600}
+.state-done .afw-node-txt em{color:#16a34a}
+.state-running .afw-node-txt em{color:#1468e8;animation:afw-blink 1.6s ease-in-out infinite}
+.state-waiting .afw-node-txt em{color:#94a3b8}
+.kind-analyst{background:linear-gradient(135deg,#0284c7,#0ea5e9)}
+.kind-designer{background:linear-gradient(135deg,#0369a1,#38bdf8)}
+.kind-teacher{background:linear-gradient(135deg,#2f6bff,#1468e8)}
+.kind-student{background:linear-gradient(135deg,#d97706,#f59e0b)}
+.kind-supervisor{background:linear-gradient(135deg,#7c3aed,#a78bfa)}
+.kind-finalizer{background:linear-gradient(135deg,#64748b,#94a3b8)}
+.afw-legend{position:absolute;left:12px;bottom:8px;display:flex;gap:14px;font-size:10px;color:#64748b;align-items:center}
+.afw-legend span{display:flex;align-items:center;gap:4px}
+.afw-legend .lg-done,.afw-legend .lg-run,.afw-legend .lg-wait{width:9px;height:9px;border-radius:3px;display:inline-block}
+.afw-legend .lg-done{background:#16a34a}
+.afw-legend .lg-run{background:#1468e8}
+.afw-legend .lg-wait{background:#cbd5e1}
+.afw-legend .lg-line1,.afw-legend .lg-line2{width:18px;height:2px;display:inline-block}
+.afw-legend .lg-line1{background:repeating-linear-gradient(90deg,#5a8ef0 0 4px,transparent 4px 7px)}
+.afw-legend .lg-line2{background:repeating-linear-gradient(90deg,#a78bfa 0 4px,transparent 4px 7px)}
+
+/* 右: 详情 */
+.afw-detail{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;border:1px solid #e3e8f0;border-radius:12px;background:#fff;padding:11px}
+.afw-detail-head{display:flex;align-items:center;gap:8px}
+.afw-detail-ico{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;color:#fff;flex:none}
+.afw-detail-t{flex:1;min-width:0;display:grid;gap:1px}
+.afw-detail-t b{font-size:13px;color:#1e293b}
+.afw-detail-t small{color:#94a3b8;font-size:10px}
+.afw-detail-badge{font-size:9.5px;padding:2px 7px;border-radius:99px;font-weight:600;flex:none}
+.afw-detail-badge.state-done{background:#e9f9ef;color:#16a34a}
+.afw-detail-badge.state-running{background:#eaf2ff;color:#1468e8}
+.afw-detail-badge.state-waiting{background:#f1f5f9;color:#94a3b8}
+.afw-detail-meta{display:grid;gap:4px;background:#fbfcfe;border:1px solid #eef2f7;border-radius:9px;padding:8px;font-size:10.5px;color:#64748b}
+.afw-detail-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.afw-detail-sec{display:grid;gap:6px}
+.afw-sec-title{font-size:11px;font-weight:700;color:#475569;display:flex;align-items:center;gap:5px}
+.afw-sec-title svg{color:#1468e8}
+.afw-sec-title span{color:#94a3b8;font-weight:500;font-size:10px}
+.afw-live{font-style:normal;font-size:9px;color:#16a34a;background:#e9f9ef;border:1px solid #bfe8cf;border-radius:7px;padding:1px 6px;font-weight:600}
+
+.afw-dsh{border:1px solid #334155;border-radius:10px;background:#0f172a;color:#e2e8f0;overflow:hidden}
+.afw-dsh-head{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px 9px;background:#1e293b;border-bottom:1px solid #334155}
+.afw-dsh-head b{font-size:9.5px;font-family:monospace;color:#93c5fd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.afw-dsh-head span{font-size:9px;color:#34d399;display:flex;align-items:center;gap:4px;flex:none}
+.afw-dsh-head span::before{content:"";width:5px;height:5px;border-radius:50%;background:#34d399;animation:afw-blink 1.2s ease-in-out infinite}
+.afw-dsh-body{min-height:96px;max-height:150px;overflow:auto;padding:8px 10px;font-family:monospace;font-size:10.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:#cbd5e1}
+.afw-dsh-body .afw-stream-cursor{display:inline-block;width:7px;height:12px;background:#5a8ef0;vertical-align:-2px;animation:afw-blink .9s steps(1) infinite}
+.afw-dsh-foot{padding:6px 9px;border-top:1px solid #263244;font-size:9px;color:#7d8da3;font-family:monospace}
+
+.afw-chat{display:grid;gap:6px;max-height:220px;overflow:auto}
+.afw-chat-empty{color:#94a3b8;font-size:10.5px;text-align:center;padding:10px 0}
+.afw-msg{display:flex;gap:6px;align-items:flex-start}
+.afw-msg.from-student{flex-direction:row-reverse}
+.afw-msg-ava{width:22px;height:22px;border-radius:7px;flex:none;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700;background:linear-gradient(135deg,#2f6bff,#1468e8)}
+.afw-msg.from-student .afw-msg-ava{background:linear-gradient(135deg,#d97706,#f59e0b)}
+.afw-msg-body{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+.afw-msg.from-student .afw-msg-body{align-items:flex-end}
+.afw-msg-body b{font-size:10px;color:#475569}
+.afw-msg-body i{font-style:normal;font-size:9px;color:#94a3b8;font-family:monospace}
+.afw-msg-body p{font-size:10.5px;color:#52677f;line-height:1.5;background:#f3f7fd;border:1px solid #e3edfa;border-radius:9px;border-top-left-radius:2px;padding:5px 8px;margin-top:2px}
+.afw-msg.from-student .afw-msg-body p{background:#e9f7ee;border:1px solid #d5eedd;border-radius:9px;border-top-right-radius:2px;color:#1f5c39}
+
+@media (max-width: 1200px){
+  .afw-body{grid-template-columns:170px minmax(0,1fr) 280px}
+}
+@media (prefers-reduced-motion: reduce){
+  .afw-root *{animation:none !important;transition:none !important}
+}
