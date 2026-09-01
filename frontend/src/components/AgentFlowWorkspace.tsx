@@ -92,10 +92,12 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
     setStreamDone(false);
     setStreaming(true);
     if (streamTimer.current) clearInterval(streamTimer.current);
-    const text = selectedNode?.message || `正在通过 dsh agent 处理「${selectedNode?.name || '当前'}」任务…`;
+    // 纯文本: 用 textContent 赋值, 任何 HTML 标签(含转义实体)都不被解释, 只显示字面内容
+    const text = (selectedNode?.message || `正在通过 dsh agent 处理「${selectedNode?.name || '当前'}」任务…`)
+      .replace(/<\\?[a-z/][^>]*>/gi, '');
     const body = streamBodyRef.current;
     if (body) {
-      body.innerHTML = '<span class="afw-stream-cursor"></span>';
+      body.textContent = '';
       let i = 0;
       streamTimer.current = setInterval(() => {
         if (i >= text.length) {
@@ -103,12 +105,12 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
           streamTimer.current = undefined;
           setStreaming(false);
           setStreamDone(true);
-          if (body) body.innerHTML = text.replace(/\n/g, '<br>');
+          if (body) body.textContent = text;
           return;
         }
         i += 2;
         if (body) {
-          body.innerHTML = text.slice(0, i).replace(/\n/g, '<br>') + '<span class="afw-stream-cursor"></span>';
+          body.textContent = text.slice(0, i);
           body.scrollTop = body.scrollHeight;
         }
       }, 18);
@@ -157,8 +159,7 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
               const Icon = KIND_ICON[node.kind];
               return (
                 <button key={node.key} type="button" className={`afw-member ${selected === node.key ? 'active' : ''}`} onClick={() => setSelected(node.key)}>
-                  <span className={`afw-member-ico kind-${node.kind}`}><Icon size={14} /></span>
-                  <span className="afw-member-info"><b>{node.name}</b><small>{node.role}</small></span>
+                  <span className={`afw-member-ico kind-${node.kind}`}><Icon size={14} /></span>                  <span className="afw-member-info"><b>{node.name}</b><small>{node.role}</small></span>
                   <span className={`afw-member-state state-${node.state}`}>
                     {node.state === 'running' && <i className="afw-pulse" />}
                     {node.state === 'done' ? <CheckCircle2 size={12} /> : null}
@@ -173,6 +174,7 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
 
         {/* 中: 流程图 */}
         <div className="afw-canvas-wrap">
+          <div className="afw-canvas scale-fit" style={{ '--afw-scale': '0.55' } as React.CSSProperties}>
           <svg className="afw-edges" width="1180" height="520" viewBox="0 0 1180 520" aria-hidden>
             {EDGES.map((edge, index) => {
               const from = nodes.find((n) => n.key === edge.from);
@@ -202,6 +204,7 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
             <span><i className="lg-wait" />待启动</span>
             <span className="lg-line"><i className="lg-line1" />消息流</span>
             <span className="lg-line"><i className="lg-line2" />督导流</span>
+          </div>
           </div>
         </div>
 

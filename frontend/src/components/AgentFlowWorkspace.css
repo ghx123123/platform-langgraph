@@ -30,9 +30,11 @@
 .afw-member-state.state-waiting{color:#94a3b8}
 .afw-roster-foot{font-size:10px;color:#94a3b8;text-align:center;padding-top:4px}
 
-/* 中: 流程图 */
-.afw-canvas-wrap{position:relative;border:1px solid #e3e8f0;border-radius:12px;background:#fbfcfe;overflow:hidden;min-height:0}
-.afw-edges{position:absolute;inset:0}
+/* 中: 流程图 — 画布内含 1180x520 逻辑画布, 默认缩放到容器 */
+.afw-canvas-wrap{position:relative;border:1px solid #e3e8f0;border-radius:12px;background:#fbfcfe;min-height:0;overflow:hidden}
+.afw-canvas{position:relative;width:1180px;height:520px;transform-origin:0 0;transition:transform .25s ease}
+.afw-canvas.scale-fit{transform:scale(var(--afw-scale, .55))}
+.afw-edges{position:absolute;inset:0;width:1180px;height:520px;pointer-events:none}
 .afw-edge{fill:none;stroke:#5a8ef0;stroke-width:1.5;stroke-dasharray:6 5;animation:afw-dash 1.2s linear infinite;opacity:.75}
 .afw-edge.done{stroke:#34c07c;stroke-dasharray:none;animation:none;opacity:1}
 .afw-edge-extra{stroke:#93b4f5;stroke-width:1.8}
@@ -101,7 +103,7 @@
 .afw-dsh-head span{font-size:9px;color:#34d399;display:flex;align-items:center;gap:4px;flex:none}
 .afw-dsh-head span::before{content:"";width:5px;height:5px;border-radius:50%;background:#34d399;animation:afw-blink 1.2s ease-in-out infinite}
 .afw-dsh-body{min-height:96px;max-height:150px;overflow:auto;padding:8px 10px;font-family:monospace;font-size:10.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:#cbd5e1}
-.afw-dsh-body .afw-stream-cursor{display:inline-block;width:7px;height:12px;background:#5a8ef0;vertical-align:-2px;animation:afw-blink .9s steps(1) infinite}
+.afw-dsh-body::after{content:"▍";color:#5a8ef0;animation:afw-blink .9s steps(1) infinite}
 .afw-dsh-foot{padding:6px 9px;border-top:1px solid #263244;font-size:9px;color:#7d8da3;font-family:monospace}
 
 .afw-chat{display:grid;gap:6px;max-height:220px;overflow:auto}

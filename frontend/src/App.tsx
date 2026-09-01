@@ -898,9 +898,9 @@ function App() {
                    <div className="empty-state tall"><FileCheck2 size={22} /><strong>课程材料已就绪</strong><span>可切换到“材料预览”检查原文，再从左侧启动教学设计。</span></div>
                  ) : (
                    <WelcomePanel onUpload={openFilePicker} onDemo={loadDemo} />
-                 )) : messages.length === 0 ? (
+                 )) : (selectedRun?.status === 'running' || selectedRun?.status === 'queued') && messages.length === 0 ? (
                    <div className="empty-state process-waiting process-log">
-                     <div className="process-log-head"><Loader2 className={selectedRun.status === 'running' ? 'spin' : ''} size={22} /><div><strong>正在建立第一份分析结果</strong><span>{selectedRun.status === 'failed' ? `运行失败：${selectedRun.error || '模型未返回可解析结果'}` : '当前节点正在用 dsh 智能体处理，请稍候'}</span></div></div>
+                     <div className="process-log-head"><Loader2 className={selectedRun.status === 'running' ? 'spin' : ''} size={22} /><div><strong>正在建立第一份分析结果</strong><span>当前节点正在用 dsh 智能体处理，请稍候</span></div></div>
                      {selectedRun.status === 'running' || selectedRun.status === 'queued' ? (
                        <div className="process-log-list">{processLogEntries.length ? processLogEntries.map((entry, index) => <div key={`${entry.sequence}-${index}`} className="process-log-row"><i className={entry.completed ? 'done' : entry.kind} /><span>{entry.message || entry.node}<small>{entry.time}</small></span></div>) : <div className="process-log-row waiting"><i className="waiting" /><span>等待后端心跳，正在连接实时进度…<small>首次响应通常需要几十秒</small></span></div>}</div>
                      ) : null}
