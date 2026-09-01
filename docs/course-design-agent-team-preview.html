@@ -117,7 +117,7 @@ button{font-family:inherit; cursor:pointer}
 .switch.on .track::after{left:16px}
 
 .flow-canvas-wrap{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:#fbfcfe;overflow:auto;position:relative}
-.flow-canvas{position:relative;width:1040px;height:530px;transition:transform .25s ease}
+.flow-canvas{position:relative;width:1180px;height:520px;transition:transform .25s ease}
 .flow-canvas.zoomed{transform:scale(1.35);transform-origin:0 0}
 .flow-lines{position:absolute;inset:0;pointer-events:none}
 .flow-lines path{fill:none;stroke-width:1.6}
@@ -385,63 +385,68 @@ button{font-family:inherit; cursor:pointer}
 
         <div class="flow-canvas-wrap">
           <div class="flow-canvas" id="flowCanvas">
-            <!-- 连线层 -->
-            <svg class="flow-lines" width="1040" height="530" viewBox="0 0 1040 530">
-              <path class="msg-done" d="M190 246 L250 246"/>
-              <path class="msg-done" d="M420 246 L470 246"/>
-              <path class="msg"      d="M345 210 C400 150 420 140 480 112"/>
-              <path class="msg"      d="M670 236 C715 170 730 130 762 108"/>
-              <path class="msg"      d="M670 248 L762 216"/>
-              <path class="msg"      d="M670 262 C715 300 730 320 762 330"/>
-              <path class="super"    d="M834 108 C760 220 640 330 512 398"/>
-              <path class="super"    d="M834 216 C730 300 640 370 512 410"/>
-              <path class="super"    d="M834 330 C790 380 640 430 512 420"/>
-              <path class="stream"   d="M566 300 C540 350 530 380 512 400"/>
-              <path class="msg"      d="M512 452 L628 452"/>
+            <!-- 连线层: 与节点坐标对齐(主线204行/学生列690/第二行400) -->
+            <svg class="flow-lines" width="1180" height="520" viewBox="0 0 1180 520">
+              <path class="msg-done" d="M196 231 L238 231"/>
+              <path class="msg-done" d="M410 231 L448 231"/>
+              <!-- 教师 → 学生3 (三叉汇聚 690列中心) -->
+              <path class="msg"      d="M646 231 C670 231 668 150 688 150"/>
+              <path class="msg"      d="M646 231 C670 231 668 225 688 225"/>
+              <path class="msg"      d="M646 231 C670 231 668 298 688 298"/>
+              <!-- 学生3 → 答疑 (汇聚) -->
+              <path class="msg"      d="M836 150 C870 150 868 210 888 216"/>
+              <path class="msg"      d="M836 225 C866 225 878 224 888 226"/>
+              <path class="msg"      d="M836 298 C870 298 868 244 888 240"/>
+              <!-- 答疑 → 督导 (折返) -->
+              <path class="super"    d="M975 240 C1010 240 1010 424 1000 426"/>
+              <!-- 督导 → 整理 -->
+              <path class="msg"      d="M946 430 L986 430"/>
             </svg>
 
-            <!-- 节点层 -->
-            <div class="node done" data-agent="analyst" style="left:20px;top:202px;width:170px">
+            <!-- 节点层: 主线4水平 + 学生列 + 督导/整理第二行 -->
+            <div class="node done" data-agent="analyst" style="left:26px;top:204px;width:170px">
               <span class="n-ico" style="background:linear-gradient(135deg,#0284c7,#0ea5e9)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L21 21"/></svg><span class="st"></span></span>
               <span class="n-txt"><b>教材分析员</b><small>内容剖析 · 重难点</small><em>已完成</em></span>
             </div>
 
-            <div class="node done" data-agent="designer" style="left:250px;top:202px;width:170px">
+            <div class="node done" data-agent="designer" style="left:240px;top:204px;width:170px">
               <span class="n-ico" style="background:linear-gradient(135deg,#0369a1,#38bdf8)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M14 3l7 7-9 9H5v-7z"/><path d="M13 4l7 7"/></svg><span class="st"></span></span>
               <span class="n-txt"><b>教学设计员</b><small>目标 · 环节 · 练习</small><em>已完成</em></span>
             </div>
 
-            <div class="node small done" data-agent="frames" style="left:480px;top:78px;width:150px">
-              <span class="n-ico" style="background:linear-gradient(135deg,#16a34a,#22c55e)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5z"/></svg><span class="st"></span></span>
-              <span class="n-txt"><b>讲授教案·框架</b><small>教学环节审定</small></span>
-            </div>
-
-            <div class="node running" data-agent="teacher" style="left:470px;top:202px;width:200px">
+            <div class="node running" data-agent="teacher" style="left:450px;top:204px;width:196px">
               <span class="n-frame"></span>
               <span class="n-ico" style="background:linear-gradient(135deg,#2f6bff,#1468e8)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.4 8.9 8.9 0 0 1-3.9-.9L3 21l2-5.2a8.38 8.38 0 0 1-1-4C4 6.1 7.7 3 12.5 3S21 6.1 21 11.5z"/></svg><span class="st"></span></span>
               <span class="n-txt"><b>讲授教师·问答</b><small>生成回答 · 整合建议</small><em>进行中</em></span>
             </div>
 
-            <div class="node small" data-agent="stu_high" style="left:762px;top:74px;width:150px">
+            <!-- 学生列 (教师→答疑 之间) -->
+            <div class="node small" data-agent="stu_high" style="left:690px;top:128px;width:146px">
               <span class="n-ico" style="background:linear-gradient(135deg,#16a34a,#4ade80)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M22 10L12 5 2 10l10 5z"/><path d="M6 12.5V17c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5"/></svg><span class="st"></span></span>
               <span class="n-txt"><b>进阶学生</b><small>迁移问题</small><em style="color:var(--green)">进行中</em></span>
             </div>
-            <div class="node small running" data-agent="stu_base" style="left:762px;top:182px;width:150px">
+            <div class="node small running" data-agent="stu_base" style="left:690px;top:200px;width:146px">
               <span class="n-ico" style="background:linear-gradient(135deg,#d97706,#f59e0b)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg><span class="st"></span></span>
               <span class="n-txt"><b>基础学生</b><small>概念问题</small><em>进行中</em></span>
             </div>
-            <div class="node small" data-agent="stu_adv" style="left:762px;top:290px;width:150px">
+            <div class="node small" data-agent="stu_adv" style="left:690px;top:272px;width:146px">
               <span class="n-ico" style="background:linear-gradient(135deg,#dc2626,#f87171)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 3-2 5-2 8h-10c0-3-2-5-2-8a7 7 0 0 1 7-7z"/><path d="M9 21h6"/></svg><span class="st"></span></span>
               <span class="n-txt"><b>拓展学生</b><small>边界问题</small><em style="color:var(--amber)">进行中</em></span>
             </div>
 
-            <div class="node super-running" data-agent="supervisor" style="left:320px;top:408px;width:190px">
+            <div class="node running" data-agent="answer" style="left:890px;top:204px;width:170px">
               <span class="n-frame"></span>
-              <span class="n-ico" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg><span class="st"></span></span>
-              <span class="n-txt"><b>教学督导</b><small>评分 · 改进建议</small><em>运行中</em></span>
+              <span class="n-ico" style="background:linear-gradient(135deg,#2f6bff,#1468e8)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.4 8.9 8.9 0 0 1-3.9-.9L3 21l2-5.2a8.38 8.38 0 0 1-1-4C4 6.1 7.7 3 12.5 3S21 6.1 21 11.5z"/><path d="M8 12h8"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>教师答疑</b><small>回应学生</small><em>进行中</em></span>
             </div>
 
-            <div class="node waiting" data-agent="finalizer" style="left:628px;top:416px;width:160px">
+            <div class="node super-running" data-agent="supervisor" style="left:760px;top:400px;width:186px">
+              <span class="n-frame"></span>
+              <span class="n-ico" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg><span class="st"></span></span>
+              <span class="n-txt"><b>教学督导</b><small>评分 · 改进</small><em>运行中</em></span>
+            </div>
+
+            <div class="node waiting" data-agent="finalizer" style="left:988px;top:400px;width:160px">
               <span class="n-ico" style="background:linear-gradient(135deg,#64748b,#94a3b8)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.6 4H7.4a2 2 0 0 0-1.9 1.5z"/></svg><span class="st"></span></span>
               <span class="n-txt"><b>成果整理员</b><small>汇总交付</small><em>将启动</em></span>
             </div>

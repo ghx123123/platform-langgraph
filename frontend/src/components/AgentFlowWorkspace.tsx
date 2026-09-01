@@ -119,6 +119,21 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
   const runningCount = nodes.filter((n) => n.state === 'running').length;
   const doneCount = nodes.filter((n) => n.state === 'done').length;
 
+  // 画布布局锚点(与原型一致): 主线 y=204 水平 4 个 + 学生列 x=690 + 第二行 y=400
+  const LAYOUT: Record<string, { x: number; y: number }> = {
+    analysis: { x: 26, y: 204 }, designer: { x: 240, y: 204 }, teach: { x: 450, y: 204 },
+    students: { x: 690, y: 200 }, answer: { x: 890, y: 204 },
+    supervisor: { x: 760, y: 400 }, finalize: { x: 988, y: 400 },
+  };
+  const EDGES: Array<{ from: string; cls: string; d: string }> = [
+    { from: 'analysis', cls: '', d: 'M196 231 C220 231 218 231 238 231' },
+    { from: 'designer', cls: '', d: 'M410 231 C430 231 428 231 448 231' },
+    { from: 'teach', cls: '', d: 'M646 231 C668 231 668 224 688 224' },
+    { from: 'students', cls: 'extra', d: 'M836 224 C862 224 868 228 888 228' },
+    { from: 'answer', cls: 'super', d: 'M975 240 C1010 240 1010 424 1000 426' },
+    { from: 'supervisor', cls: '', d: 'M946 430 L986 430' },
+  ];
+
   return (
     <div className="afw-root">
       {/* 顶部: 流程标题 + 团队进度 + 状态 */}
@@ -158,27 +173,21 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
 
         {/* 中: 流程图 */}
         <div className="afw-canvas-wrap">
-          <svg className="afw-edges" width="100%" height="100%" viewBox="0 0 900 560" preserveAspectRatio="xMidYMid meet" aria-hidden>
-            {nodes.slice(0, 6).map((node, index) => {
-              const next = nodes[index + 1];
-              if (!next) return null;
-              const x1 = 70 + index * 150, y1 = 260;
-              const x2 = 70 + (index + 1) * 150, y2 = 260;
-              const done = node.state === 'done';
-              return <path key={node.key} className={`afw-edge ${done ? 'done' : ''}`} d={`M${x1 + 52} ${y1}C${x1 + 90} ${y1},${x2 - 90} ${y2},${x2 - 52} ${y2}`} />;
+          <svg className="afw-edges" width="1180" height="520" viewBox="0 0 1180 520" aria-hidden>
+            {EDGES.map((edge, index) => {
+              const from = nodes.find((n) => n.key === edge.from);
+              const done = from?.state === 'done';
+              return <path key={`${edge.from}-${index}`} className={`afw-edge ${edge.cls} ${done ? 'done' : ''}`} d={edge.d} />;
             })}
-            {/* 学生 → 教师答疑 连线 */}
-            <path className="afw-edge afw-edge-extra" d="M370 330 C470 420 560 420 640 330" />
-            {/* 督导 → 设计 回环 */}
-            <path className="afw-edge afw-edge-super" d="M700 260 C700 180 520 130 370 130" />
           </svg>
           <div className="afw-nodes">
-            {nodes.map((node, index) => {
+            {nodes.map((node) => {
               const Icon = KIND_ICON[node.kind];
-              const left = 70 + index * 150;
+              const pos = LAYOUT[node.key];
+              if (!pos) return null;
               return (
                 <button key={node.key} type="button" className={`afw-node state-${node.state} ${selected === node.key ? 'active' : ''}`}
-                  style={{ left: `${left}px`, top: node.key === 'students' ? '300px' : node.key === 'answer' ? '300px' : '230px' }}
+                  style={{ left: `${pos.x}px`, top: `${pos.y}px`, width: node.key === 'students' ? '146px' : '196px' }}
                   onClick={() => setSelected(node.key)}>
                   {node.state === 'running' && <span className="afw-node-frame" />}
                   <span className={`afw-node-ico kind-${node.kind}`}><Icon size={16} /><i className="afw-node-dot" /></span>
