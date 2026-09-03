@@ -153,6 +153,10 @@ class MaterialUnitScopeOption(BaseModel):
     id: str
     title: str
     content: str = ""
+    # The option may come from a linked material unit.  Keeping the archive
+    # identity in the API payload lets clients distinguish browse-only
+    # cross-archive references from options that can enter the active course.
+    archive_id: str | None = None
     source_material_id: str = ""
     source_unit_id: str = ""
     source_name: str = ""
@@ -166,6 +170,7 @@ class MaterialUnitOutlineNode(BaseModel):
     title: str
     level: int = Field(ge=1, le=3)
     preview: str = ""
+    archive_id: str | None = None
     source_material_id: str = ""
     source_unit_id: str = ""
     source_name: str = ""
@@ -177,6 +182,7 @@ class MaterialUnitOutlineNode(BaseModel):
 class MaterialUnitScopeOptions(BaseModel):
     unit_id: str
     course_title: str
+    archive_id: str | None = None
     teaching_items: list[MaterialUnitScopeOption] = Field(default_factory=list)
     syllabus_items: list[MaterialUnitScopeOption] = Field(default_factory=list)
     textbook_outline: list[MaterialUnitOutlineNode] = Field(default_factory=list)

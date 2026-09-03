@@ -34,7 +34,7 @@
 .mode-switch button:last-child { border-right: 0; }
 .materials-preview { min-height: 0; overflow: auto; padding: 14px 16px; }
 .materials-editor { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 5px; padding: 12px; color: #475569; font-size: 11px; font-weight: 600; }
-.materials-editor textarea { width: 100%; min-height: 280px; resize: none; padding: 11px; border: 1px solid #cbd5e1; border-radius: 5px; color: #0f172a; background: #f8fafc; font: 10px/1.65 'Geist Variable', 'Microsoft YaHei', sans-serif; }
+.materials-editor textarea { width: 100%; min-height: 280px; resize: none; padding: 11px; border: 1px solid #cbd5e1; border-radius: 5px; color: #0f172a; background: #f8fafc; font: 13px/1.7 'Geist Variable', 'Microsoft YaHei', sans-serif; }
 .generation-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); background: #f8fafc; }
 .generation-box label { min-width: 0; display: grid; gap: 4px; color: #475569; font-size: 11px; font-weight: 600; }
 .generation-box textarea { width: 100%; min-height: 48px; resize: vertical; padding: 7px 9px; border: 1px solid #e2e8f0; border-radius: 5px; color: #334155; background: #fff; font-size: 11px; line-height: 1.5; }

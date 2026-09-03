@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,9 +24,10 @@ from backend.material_units.models import (
 )
 from backend.material_units.service import (
     SYLLABUS_CATEGORY_LABELS, accessible_material_documents, build_file_references, build_initial_outline,
-    build_link, build_material_unit_file, build_refined_outline, build_scope_options, build_synthesize_context, create_knowledge_outline,
+    build_link, build_refined_outline, build_scope_options, build_synthesize_context, create_knowledge_outline,
     create_or_update_material_unit, match_syllabus_requirements, material_unit_summary,
-    merge_material_units, next_outline_version, refinement_evidence, restructure_outline, utc_now,
+    merge_material_units, next_outline_version, refresh_material_unit_snapshot, refinement_evidence,
+    restructure_outline, utc_now,
 )
 from backend.material_units.storage import (
     delete_material_unit, list_material_units, list_refine_tasks, load_material_unit, load_refine_task,
@@ -39,6 +41,8 @@ from backend.workflows.dsh_engine import DshAgentEngine, DshEngineError
 router = APIRouter(prefix="/api/material-units", tags=["material-units"])
 _mutation_lock = asyncio.Lock()
 _running_refine_tasks: set[str] = set()
+_logger = logging.getLogger("multi_agent_platform.material_units")
+SYLLABUS_MATCH_TIMEOUT_SECONDS = 15.0
 
 
 def _creates_reference_cycle(target_id: str, source_id: str, records: dict[str, dict]) -> bool:
@@ -65,7 +69,15 @@ async def material_units(archive_id: str = "") -> MaterialUnitList:
     records = await run_in_threadpool(list_material_units, settings.material_unit_store_path)
     if archive_id:
         records = [record for record in records if record.get("archive_id") == archive_id]
-    return MaterialUnitList(items=[MaterialUnitSummary.model_validate(material_unit_summary(item)) for item in records])
+    # Parsing may finish after the unit was created. Reuse the live archive
+    # snapshot as the detail endpoint so list and detail counts stay aligned.
+    archives = await run_in_threadpool(list_archives, settings.course_archive_store_path)
+    archive_map = {item.get("id"): item for item in archives if item.get("id")}
+    summaries = [
+        material_unit_summary(refresh_material_unit_snapshot(record, archive_map.get(record.get("archive_id"))))
+        for record in records
+    ]
+    return MaterialUnitList(items=[MaterialUnitSummary.model_validate(item) for item in summaries])
 
 
 async def _unit_with_links(unit_id: str) -> tuple[dict, list[dict], list[dict]]:
@@ -112,31 +124,10 @@ async def material_unit(unit_id: str) -> MaterialUnitRecord:
     if record.get("archive_id"):
         for item in archives_raw:
             if item.get("id") == record["archive_id"]:
-                archive = await run_in_threadpool(load_archive, get_settings().course_archive_store_path, item["id"])
+                archive = item
                 break
     if archive:
-        known = {m["id"]: m for m in archive.get("materials", [])}
-        docs = archive.get("_documents", {})
-        ordered = list(dict.fromkeys(record.get("material_ids") or []))
-        if ordered:
-            rebuilt = []
-            missing_ids = []
-            for mid in ordered:
-                if mid in known:
-                    rebuilt.append(build_material_unit_file(known[mid], docs.get(mid)))
-                else:
-                    missing_ids.append(mid)
-            record["files"] = rebuilt
-            # 档案中已消失的材料: 不静默丢弃 — 记录数量差并在 overview 提示教师处理
-            if missing_ids:
-                record["material_count"] = len(ordered)
-                record["overview"] = (
-                    f"本单元登记 {len(ordered)} 份资料，其中 {len(missing_ids)} 份已不在课程资料库中（可能源文件被移除），"
-                    f"显示 {len(rebuilt)} 份。可在资料库重新关联或从单元移除失效资料。"
-                )
-            parsed = [f for f in record["files"] if f["parse_status"] == "parsed"]
-            record["parsed_count"] = len(parsed)
-            record["overview"] = f"本单元包含 {len(record['files'])} 份资料，已完成 {len(parsed)} 份内容提取。"
+        record = refresh_material_unit_snapshot(record, archive)
     return MaterialUnitRecord.model_validate(record)
 
 
@@ -153,9 +144,11 @@ async def _model_syllabus_matches(request: Request, options: dict, teaching_item
         return []
     teaching_map = {item["id"]: item for item in options.get("teaching_items") or []}
     selected = [teaching_map[item_id] for item_id in teaching_item_ids if item_id in teaching_map]
+    archive_id = options.get("archive_id")
     candidates = [{
         "id": item["id"], "title": item.get("title", ""), "content": item.get("content", "")[:600],
-    } for item in options.get("syllabus_items") or []]
+    } for item in options.get("syllabus_items") or []
+        if not archive_id or not item.get("archive_id") or item.get("archive_id") == archive_id]
     system_prompt = (
         "你是教学文档范围匹配器。只能在提供的大纲候选中判断与已选讲次相关的条目，不得新增或改写大纲要求。"
         "返回 JSON 对象，格式为 {\"matches\":[{\"id\":候选ID,\"category\":分类,\"score\":0到1,\"reason\":简短理由}]}。"
@@ -163,14 +156,37 @@ async def _model_syllabus_matches(request: Request, options: dict, teaching_item
     )
     user_prompt = json.dumps({"selected_sessions": selected, "syllabus_candidates": candidates}, ensure_ascii=False)
     try:
-        result = await model.generate_json(system_prompt, user_prompt)
-    except Exception:
+        timeout = float(getattr(get_settings(), "syllabus_match_timeout_seconds", SYLLABUS_MATCH_TIMEOUT_SECONDS))
+    except (TypeError, ValueError):
+        timeout = SYLLABUS_MATCH_TIMEOUT_SECONDS
+    # Keep a small lower bound for defensive callers/tests while the public
+    # Settings model enforces a practical one-second minimum.
+    timeout = max(0.1, min(timeout, 120.0))
+    try:
+        # A semantic enhancement must never hold the planning screen forever.
+        # wait_for also propagates cancellation to the dsh bridge request, so
+        # the HTTP client can safely cancel when the teacher changes lecture.
+        result = await asyncio.wait_for(model.generate_json(system_prompt, user_prompt), timeout=timeout)
+    except asyncio.TimeoutError:
+        _logger.warning(
+            "syllabus semantic match timed out; using deterministic ranking",
+            extra={"unit_id": options.get("unit_id"), "timeout_seconds": timeout},
+        )
+        return []
+    except Exception as exc:
+        _logger.info(
+            "syllabus semantic match unavailable; using deterministic ranking: %s",
+            str(exc)[:200],
+        )
+        return []
+    if not isinstance(result, dict):
+        _logger.info("syllabus semantic match returned a non-object; using deterministic ranking")
         return []
     known_ids = {item["id"] for item in candidates}
-    return [
-        item for item in result.get("matches", [])
-        if isinstance(item, dict) and item.get("id") in known_ids
-    ]
+    raw_matches = result.get("matches")
+    if not isinstance(raw_matches, list):
+        return []
+    return [item for item in raw_matches if isinstance(item, dict) and item.get("id") in known_ids]
 
 
 @router.post("/{unit_id}/syllabus-matches", response_model=SyllabusMatchResponse)
@@ -181,7 +197,7 @@ async def syllabus_matches(unit_id: str, payload: SyllabusMatchRequest, request:
         result = match_syllabus_requirements(
             options, payload.teaching_item_ids, payload.limit_per_category, model_matches,
         )
-    except KeyError as exc:
+    except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return SyllabusMatchResponse.model_validate(result)
 

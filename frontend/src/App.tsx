@@ -706,7 +706,7 @@ function App() {
     });
     return logs.slice(-12);
   }, [events]);
-
+  void processLogEntries;
 
   const exportReport = async (format: 'md' | 'pdf', variant: 'teacher' | 'student' = 'teacher') => {
     if (!selectedRun) return;
@@ -874,44 +874,39 @@ function App() {
           <header className="teaching-header"><div><span className="eyebrow">教师教学工作区</span><h2>{workspaceTitle}</h2><p>{workspaceSubtitle}</p>{selectedRun && <TeachingProgress run={selectedRun} currentNode={liveNode} currentIteration={teaching.current_iteration} />}</div>{selectedRun && displayRunStatus && <div className="run-controls"><span className={`status-badge status-${displayRunStatus}`}>{displayRunStatus === 'running' && <Loader2 className="spin" size={13} />}{statusLabel(displayRunStatus)}</span>{selectedRun.final_output && <button className="secondary-button" type="button" onClick={() => navigateExport('lesson')} title="打开当前教案定稿"><FileDown size={15} />编辑与导出</button>}{!terminalStatuses.has(selectedRun.status) && <button className="secondary-button danger" type="button" onClick={() => void workflowApi.cancelRun(selectedRun.id).then(refresh)}><StopCircle size={15} />停止</button>}</div>}</header>
             {activeDesign && <div className="design-source-bar"><div><Link2 size={14} /><span>当前课程设计引用 <strong>{activeDesign.source_references.length}</strong> 条上游数据</span><small>第 {activeDesign.version} 版 · {activeDesign.run_id ? '已关联生成会话' : '待关联生成会话'}</small></div><button type="button" onClick={() => navigateStage('materials')}>核对资料</button><button type="button" onClick={() => navigateExport('lesson')}>打开教案定稿</button></div>}
             {workspaceView === 'process' && selectedRun && ['queued', 'running'].includes(selectedRun.status) && <GenerationStatusPanel run={selectedRun} events={events} connection={connection} />}
-            <nav className="workspace-tabs" aria-label="工作区页面">
-             <button type="button" className={workspaceView === 'material' ? 'active' : ''} onClick={() => setWorkspaceView('material')} disabled={!previewDocument}><FileText size={15} /><span>材料预览</span><small>目录与分析覆盖</small></button>
-            <button type="button" className={workspaceView === 'process' ? 'active' : ''} onClick={() => setWorkspaceView('process')}><Radio size={15} /><span>生成过程</span><small>实时进度与对话</small></button>
-            <button type="button" className={workspaceView === 'result' ? 'active' : ''} onClick={() => setWorkspaceView('result')} disabled={!selectedRun?.final_output}><FileDown size={15} /><span>教学成果</span><small>预览、编辑与导出</small></button>
+            <nav className="workspace-tabs" role="tablist" aria-label="工作区页面">
+             <button id="workspace-tab-material" type="button" role="tab" aria-selected={workspaceView === 'material'} aria-controls="workspace-panel-material" className={workspaceView === 'material' ? 'active' : ''} onClick={() => setWorkspaceView('material')} disabled={!previewDocument}><FileText size={15} /><span>材料预览</span><small>目录与分析覆盖</small></button>
+            <button id="workspace-tab-process" type="button" role="tab" aria-selected={workspaceView === 'process'} aria-controls="workspace-panel-process" className={workspaceView === 'process' ? 'active' : ''} onClick={() => setWorkspaceView('process')}><Radio size={15} /><span>生成过程</span><small>实时进度与对话</small></button>
+            <button id="workspace-tab-result" type="button" role="tab" aria-selected={workspaceView === 'result'} aria-controls="workspace-panel-result" className={workspaceView === 'result' ? 'active' : ''} onClick={() => setWorkspaceView('result')} disabled={!selectedRun?.final_output}><FileDown size={15} /><span>教学成果</span><small>预览、编辑与导出</small></button>
            </nav>
           </div>
 
           {workspaceView === 'material' ? (
-            previewDocument ? <DocumentPreviewWorkspace {...previewDocument} /> : activeDesign ? (
+            <div id="workspace-panel-material" role="tabpanel" aria-labelledby="workspace-tab-material" className="workspace-tabpanel">
+            {previewDocument ? <DocumentPreviewWorkspace {...previewDocument} /> : activeDesign ? (
               <div className="empty-state tall"><FileCheck2 size={22} /><strong>材料预览正在加载</strong><span>已导入知识大纲 v{activeDesign.knowledge_outline_version || 1}，正在准备 {activeDesign.material_ids.length} 份已解析材料的正文预览…</span></div>
-            ) : <WelcomePanel onUpload={openFilePicker} onDemo={loadDemo} />
+            ) : <WelcomePanel onUpload={openFilePicker} onDemo={loadDemo} />}
+            </div>
           ) : workspaceView === 'result' ? (
-            <div className="full-result-view"><ResultPanel run={selectedRun} onExport={exportReport} onError={setError} /></div>
+            <div id="workspace-panel-result" role="tabpanel" aria-labelledby="workspace-tab-result" className="workspace-tabpanel full-result-view"><ResultPanel run={selectedRun} onExport={exportReport} onError={setError} /></div>
           ) : (
-            <div className="process-view">
-              <div className="phase-rail">{phases.map((phase, index) => { const active = activePhase === phase.key; const done = completedNodes.has(phase.key) || selectedRun?.status === 'completed'; return <div key={phase.key} className={`phase-step ${active ? 'active' : ''} ${done ? 'done' : ''}`}><span>{done ? <CheckCircle2 size={14} /> : index + 1}</span><div><strong>{phase.name}</strong><small>{phase.short}</small></div></div>; })}</div>
-              {selectedRun && messages.length > 0 && <div className="process-explorer"><div className="process-explorer-label"><ScanSearch size={14} /><span>局部查看</span><small>从全局流程定位到单轮内容</small></div><div className="round-switch" role="tablist" aria-label="教学轮次">{messageGroups.map((group) => { const active = messageView !== 'all' && group.iteration === (messageView === 'latest' ? latestIteration : messageView); return <button type="button" key={group.iteration} className={active ? 'active' : ''} onClick={() => setMessageView(group.iteration)}>{group.iteration === 0 ? '教学准备' : `第 ${group.iteration} 轮`}</button>; })}<button type="button" className={messageView === 'all' ? 'active' : ''} onClick={() => setMessageView('all')}>完整记录</button></div><button type="button" className={`insight-toggle ${detailPanelOpen ? 'active' : ''}`} onClick={() => setDetailPanelOpen((value) => !value)} aria-pressed={detailPanelOpen}>{detailPanelOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}课程洞察</button></div>}
-               <div className="classroom-stream" aria-live="polite">
+            <div id="workspace-panel-process" role="tabpanel" aria-labelledby="workspace-tab-process" className="workspace-tabpanel process-view">
+              {!selectedRun && <div className="phase-rail">{phases.map((phase, index) => { const active = activePhase === phase.key; const done = completedNodes.has(phase.key); return <div key={phase.key} className={`phase-step ${active ? 'active' : ''} ${done ? 'done' : ''}`}><span>{done ? <CheckCircle2 size={14} /> : index + 1}</span><div><strong>{phase.name}</strong><small>{phase.short}</small></div></div>; })}</div>}
+              {selectedRun && messages.length > 0 && <div className="process-explorer"><div className="process-explorer-label"><ScanSearch size={14} /><span>局部查看</span><small>从全局流程定位到单轮内容</small></div><div className="round-switch" role="tablist" aria-label="教学轮次">{messageGroups.map((group) => { const active = messageView !== 'all' && group.iteration === (messageView === 'latest' ? latestIteration : messageView); return <button type="button" role="tab" aria-selected={active} aria-controls="classroom-stream-panel" key={group.iteration} className={active ? 'active' : ''} onClick={() => setMessageView(group.iteration)}>{group.iteration === 0 ? '教学准备' : `第 ${group.iteration} 轮`}</button>; })}<button type="button" role="tab" aria-selected={messageView === 'all'} aria-controls="classroom-stream-panel" className={messageView === 'all' ? 'active' : ''} onClick={() => setMessageView('all')}>完整记录</button></div><button type="button" className={`insight-toggle ${detailPanelOpen ? 'active' : ''}`} onClick={() => setDetailPanelOpen((value) => !value)} aria-pressed={detailPanelOpen}>{detailPanelOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}课程洞察</button></div>}
+               <div id="classroom-stream-panel" role="tabpanel" className="classroom-stream" aria-live="polite">
                  {!selectedRun ? (activeDesign ? (
                    <div className="empty-state tall"><FileCheck2 size={22} /><strong>课程设计已就绪</strong><span>已导入知识大纲 v{activeDesign.knowledge_outline_version || 1} 与 {activeDesign.material_ids.length} 份已解析材料，引用 {activeDesign.source_references.length} 条上游数据。请在左侧完善课程标题并选择知识点，点击「启动教学设计」开始智能体生成。</span></div>
                  ) : parsedDoc ? (
                    <div className="empty-state tall"><FileCheck2 size={22} /><strong>课程材料已就绪</strong><span>可切换到“材料预览”检查原文，再从左侧启动教学设计。</span></div>
                  ) : (
                    <WelcomePanel onUpload={openFilePicker} onDemo={loadDemo} />
-                 )) : (selectedRun?.status === 'running' || selectedRun?.status === 'queued') && messages.length === 0 ? (
-                   <div className="empty-state process-waiting process-log">
-                     <div className="process-log-head"><Loader2 className={selectedRun.status === 'running' ? 'spin' : ''} size={22} /><div><strong>正在建立第一份分析结果</strong><span>当前节点正在用 dsh 智能体处理，请稍候</span></div></div>
-                     {selectedRun.status === 'running' || selectedRun.status === 'queued' ? (
-                       <div className="process-log-list">{processLogEntries.length ? processLogEntries.map((entry, index) => <div key={`${entry.sequence}-${index}`} className="process-log-row"><i className={entry.completed ? 'done' : entry.kind} /><span>{entry.message || entry.node}<small>{entry.time}</small></span></div>) : <div className="process-log-row waiting"><i className="waiting" /><span>等待后端心跳，正在连接实时进度…<small>首次响应通常需要几十秒</small></span></div>}</div>
-                     ) : null}
-                   </div>
-                 ) : (
+                )) : selectedRun ? (
                    <AgentFlowWorkspace
                      run={selectedRun}
                      events={events}
                      messages={messages}
-                   />
-                 )}
+                    />
+                  ) : null}
                  {(selectedRun?.status === 'paused' && selectedRun.pending_input) && <div className="process-action-zone"><InterventionPanel pending={selectedRun.pending_input} value={resumeText} onChange={setResumeText} busy={resuming} onSubmit={submitResume} /></div>}
                  {selectedRun?.status === 'completed' && <div className="process-action-zone"><div className="intervene-card next-round"><header><Repeat size={15} /><strong>打磨同一教学设计</strong><small>下一轮保留当前知识范围，先按督导建议重做教学设计，再生成新的讲授方案</small></header><textarea value={resumeText} onChange={(event) => setResumeText(event.target.value)} rows={2} placeholder="可选：补充本轮要优化的教学策略、示例或时间分配；留空则沿用督导提示词" /><div className="intervene-actions"><button type="button" className="primary-button" disabled={resuming} onClick={() => void appendRound()}>{resuming ? <Loader2 className="spin" size={15} /> : <Repeat size={15} />}再跑一轮</button></div></div></div>}
                </div>
@@ -920,8 +915,8 @@ function App() {
         </section>
 
         {workspaceView === 'process' && detailPanelOpen && <aside className="detail-panel">
-          <div className="detail-tabs detail-tabs-three" role="tablist"><button className={detailTab === 'analysis' ? 'active' : ''} onClick={() => setDetailTab('analysis')}><Layers3 size={14} />重难点</button><button className={detailTab === 'framework' ? 'active' : ''} onClick={() => setDetailTab('framework')}><FileText size={14} />教学环节</button><button className={detailTab === 'review' ? 'active' : ''} onClick={() => setDetailTab('review')}><ShieldCheck size={14} />督导评价</button></div>
-          <div className="detail-content">{detailTab === 'analysis' && <AnalysisPanel data={teaching} />}{detailTab === 'framework' && <FrameworkPanel data={teaching} />}{detailTab === 'review' && <ReviewPanel run={selectedRun} events={events} />}</div>
+          <div className="detail-tabs detail-tabs-three" role="tablist" aria-label="课程洞察"><button id="detail-tab-analysis" type="button" role="tab" aria-selected={detailTab === 'analysis'} aria-controls="detail-tabpanel" className={detailTab === 'analysis' ? 'active' : ''} onClick={() => setDetailTab('analysis')}><Layers3 size={14} />重难点</button><button id="detail-tab-framework" type="button" role="tab" aria-selected={detailTab === 'framework'} aria-controls="detail-tabpanel" className={detailTab === 'framework' ? 'active' : ''} onClick={() => setDetailTab('framework')}><FileText size={14} />教学环节</button><button id="detail-tab-review" type="button" role="tab" aria-selected={detailTab === 'review'} aria-controls="detail-tabpanel" className={detailTab === 'review' ? 'active' : ''} onClick={() => setDetailTab('review')}><ShieldCheck size={14} />督导评价</button></div>
+          <div id="detail-tabpanel" role="tabpanel" aria-labelledby={`detail-tab-${detailTab}`} className="detail-content">{detailTab === 'analysis' && <AnalysisPanel data={teaching} />}{detailTab === 'framework' && <FrameworkPanel data={teaching} />}{detailTab === 'review' && <ReviewPanel run={selectedRun} events={events} />}</div>
         </aside>}
       </main>
       )}

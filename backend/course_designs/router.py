@@ -18,7 +18,7 @@ from backend.course_designs.models import (
 )
 from backend.course_designs.service import (
     apply_assembly, assembly_sources, build_docx, create_design, inspect_docx_template,
-    public_record, rebind_design, reference_detail, restore_source_snapshot, summary, sync_run,
+    CrossArchiveReferenceError, public_record, rebind_design, reference_detail, restore_source_snapshot, summary, sync_run,
     update_design, utc_now, validate_run_context,
 )
 from backend.course_designs.storage import delete_design, list_designs, load_design, save_design
@@ -187,11 +187,13 @@ async def create(payload: CourseDesignCreate) -> CourseDesignRecord:
                 payload.material_unit_id,
             )
         outline = _resolve_knowledge_outline(payload, unit, archive)
-        record = await run_in_threadpool(create_design, archive, payload, outline)
+        record = await run_in_threadpool(create_design, archive, payload, outline, unit)
         await run_in_threadpool(save_design, settings.course_design_store_path, record)
         return CourseDesignRecord.model_validate(public_record(record))
     except FileNotFoundError as exc:
         raise _not_found(exc) from exc
+    except CrossArchiveReferenceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

@@ -1,5 +1,5 @@
 // SessionRunCard.tsx - 教学会话卡片：状态、综合评分、轮次、两步删除确认
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { AlertTriangle, Award, Clock3, Trash2 } from 'lucide-react';
 import type { RunStatus, WorkflowRun } from '../types/workflow';
 import './SessionRunCard.css';
@@ -60,6 +60,14 @@ export function SessionRunCard({ run, selected, onSelect, onDelete }: SessionRun
     onSelect();
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleSelect();
+    }
+  };
+
   const handleDeleteClick = (e: MouseEvent<HTMLButtonElement>): void => {
     e.stopPropagation();
     setConfirming(true);
@@ -80,6 +88,11 @@ export function SessionRunCard({ run, selected, onSelect, onDelete }: SessionRun
     <div
       className={`session-card session-status-${run.status}${selected ? ' selected' : ''}${isFailed ? ' is-failed' : ''}`}
       onClick={handleSelect}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={`${run.objective}，${STATUS_TEXT[run.status]}${selected ? '，当前已选中' : ''}`}
       title={isFailed && run.error ? run.error : undefined}
     >
       <span className="session-card-dot" aria-hidden="true" />

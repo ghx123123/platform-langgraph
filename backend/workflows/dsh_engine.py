@@ -202,6 +202,14 @@ class DshAgentEngine:
         except asyncio.TimeoutError:
             self._pending.pop(rid, None)
             raise DshEngineError(f"dsh bridge request timed out after {timeout}s") from None
+        except asyncio.CancelledError:
+            # A browser lecture switch/abort can cancel the outer request.
+            # Remove the bridge future immediately; otherwise a slow or dead
+            # subprocess leaves an unbounded pending entry until shutdown.
+            self._pending.pop(rid, None)
+            if not fut.done():
+                fut.cancel()
+            raise
         return msg
 
     def _stderr_tail(self) -> str:

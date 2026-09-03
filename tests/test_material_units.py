@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -470,6 +471,42 @@ def test_syllabus_match_model_failure_reliably_falls_back(monkeypatch, tmp_path)
     assert response.status_code == 200
     assert response.json()["model_used"] is False
     assert response.json()["matches"]
+
+
+def test_syllabus_match_model_timeout_reliably_falls_back(monkeypatch, tmp_path):
+    class SlowModel:
+        async def generate_json(self, *_args, **_kwargs):
+            await asyncio.sleep(0.05)
+            return {"matches": []}
+
+    monkeypatch.setattr(material_unit_router, "SYLLABUS_MATCH_TIMEOUT_SECONDS", 0.01)
+    client, unit_id = _scope_fixture(monkeypatch, tmp_path, SlowModel())
+    options = client.get(f"/api/material-units/{unit_id}/scope-options").json()
+    response = client.post(
+        f"/api/material-units/{unit_id}/syllabus-matches",
+        json={"teaching_item_ids": [options["teaching_items"][0]["id"]], "use_model": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model_used"] is False
+    assert payload["matching_method"] == "deterministic"
+    assert payload["matches"]
+
+
+def test_material_unit_list_and_detail_use_same_live_archive_counts(monkeypatch, tmp_path):
+    client, unit_id = _scope_fixture(monkeypatch, tmp_path)
+    stored = load_material_unit(tmp_path / "units", unit_id)
+    stored["parsed_count"] = 0
+    stored["total_characters"] = 0
+    save_material_unit(tmp_path / "units", stored)
+
+    listed = client.get("/api/material-units").json()["items"][0]
+    detail = client.get(f"/api/material-units/{unit_id}").json()
+
+    assert listed["id"] == unit_id
+    assert listed["parsed_count"] == detail["parsed_count"] == len(detail["files"])
+    assert listed["total_characters"] == detail["total_characters"]
 
 
 def test_syllabus_match_model_can_rerank_only_known_candidates(monkeypatch, tmp_path):

@@ -21,6 +21,7 @@ from backend.course_designs.service import (
     sync_run,
     update_design,
     validate_run_context,
+    CrossArchiveReferenceError,
 )
 from backend.course_designs.storage import list_designs, load_design, save_design
 from backend.documents.storage import original_path, persist_original
@@ -186,6 +187,52 @@ def test_current_material_unit_nodes_are_mapped_into_course_design() -> None:
     assert record["source_references"][-1]["character_count"] > 0
 
 
+def test_course_design_rejects_schedule_mismatch_with_outline() -> None:
+    outline = knowledge_outline()
+    outline["selected_session_ids"] = [f"schedule:{MATERIAL_UNIT_ID}:schedule-2"]
+
+    with pytest.raises(ValueError, match="讲次.*不一致"):
+        create_design(
+            archive_record(),
+            CourseDesignCreate(
+                archive_id=archive_record()["id"],
+                schedule_id="schedule-3",
+                material_ids=["22222222-2222-4222-8222-222222222222"],
+                primary_material_id="22222222-2222-4222-8222-222222222222",
+                material_unit_id=MATERIAL_UNIT_ID,
+                knowledge_outline_id=KNOWLEDGE_OUTLINE_ID,
+                knowledge_outline_version=2,
+            ),
+            outline,
+        )
+
+
+def test_course_design_normalizes_scoped_schedule_id_before_persisting() -> None:
+    outline = knowledge_outline()
+    outline["selected_session_ids"] = [f"schedule:{MATERIAL_UNIT_ID}:schedule-3"]
+    payload = outline_payload(version=2).model_copy(
+        update={"schedule_id": f"schedule:{MATERIAL_UNIT_ID}:schedule-3"}
+    )
+
+    record = create_design(archive_record(), payload, outline)
+
+    assert record["schedule_id"] == "schedule-3"
+    assert record["source_snapshot"]["schedule"][0]["id"] == "schedule-3"
+
+
+def test_course_design_rejects_cross_archive_scoped_schedule_even_when_ids_collide() -> None:
+    outline = knowledge_outline()
+    outline["selected_session_ids"] = ["schedule:foreign-unit:schedule-3"]
+    unit = {
+        "id": MATERIAL_UNIT_ID,
+        "archive_id": archive_record()["id"],
+        "linked_units": [{"unit_id": "foreign-unit", "archive_id": "archive-b"}],
+    }
+
+    with pytest.raises(CrossArchiveReferenceError, match="关联资料库"):
+        create_design(archive_record(), outline_payload().model_copy(update={"schedule_id": "schedule-3"}), outline, unit)
+
+
 def test_create_design_without_outline_keeps_legacy_material_behavior() -> None:
     record = create_record()
 
@@ -255,6 +302,36 @@ def test_create_course_design_api_rejects_missing_outline_version(monkeypatch, t
 
     assert response.status_code == 404
     assert "v9" in response.json()["detail"]
+
+
+def test_create_course_design_api_rejects_schedule_mismatch(monkeypatch, tmp_path: Path) -> None:
+    outline = knowledge_outline()
+    outline["selected_session_ids"] = [f"schedule:{MATERIAL_UNIT_ID}:schedule-2"]
+    unit = {
+        "id": MATERIAL_UNIT_ID,
+        "archive_id": archive_record()["id"],
+        "knowledge_outlines": [outline],
+    }
+    monkeypatch.setattr(course_design_router, "load_archive", lambda _root, _id: archive_record())
+    monkeypatch.setattr(course_design_router, "load_material_unit", lambda _root, _id: unit)
+    monkeypatch.setattr(
+        course_design_router,
+        "get_settings",
+        lambda: SimpleNamespace(
+            course_design_store_path=tmp_path / "designs",
+            course_archive_store_path=tmp_path / "archives",
+            material_unit_store_path=tmp_path / "units",
+        ),
+    )
+    api = FastAPI()
+    api.include_router(course_design_router.router)
+
+    payload = outline_payload(version=2).model_dump(exclude_none=True)
+    payload["schedule_id"] = "schedule-3"
+    response = TestClient(api).post("/api/course-designs", json=payload)
+
+    assert response.status_code == 422
+    assert "讲次" in response.json()["detail"]
 
 
 def test_design_preserves_original_extracted_and_structured_lineage() -> None:

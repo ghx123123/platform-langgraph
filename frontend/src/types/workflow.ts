@@ -799,6 +799,7 @@ export interface MaterialUnitScopeOption {
   id: string;
   title: string;
   content: string;
+  archive_id?: string | null;
   source_material_id: string;
   source_unit_id: string;
   source_name: string;
@@ -812,6 +813,7 @@ export interface MaterialUnitOutlineNode {
   title: string;
   level: number;
   preview: string;
+  archive_id?: string | null;
   source_material_id: string;
   source_unit_id: string;
   source_name: string;
@@ -823,6 +825,7 @@ export interface MaterialUnitOutlineNode {
 export interface MaterialUnitScopeOptions {
   unit_id: string;
   course_title: string;
+  archive_id?: string | null;
   teaching_items: MaterialUnitScopeOption[];
   syllabus_items: MaterialUnitScopeOption[];
   textbook_outline: MaterialUnitOutlineNode[];
@@ -860,6 +863,14 @@ export interface MaterialUnitSyllabusMatch {
   reason: string;
   recommended: boolean;
   evidence: MaterialUnitEvidence;
+  /**
+   * Present only when a saved outline is restored against a newer scope
+   * snapshot.  The flags are intentionally optional so the API contract
+   * remains backwards-compatible with live matching responses.
+   */
+  restored?: boolean;
+  stale?: boolean;
+  original_id?: string;
 }
 
 export interface MaterialUnitScopeAlignment {

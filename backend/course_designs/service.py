@@ -15,6 +15,10 @@ from backend.course_designs.models import (
 )
 
 
+class CrossArchiveReferenceError(ValueError):
+    """Raised when a browse-only linked source crosses the active archive."""
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -66,7 +70,160 @@ def _reference(design_id: str, archive: dict, material: dict, layer: str) -> dic
     }
 
 
-def create_design(archive: dict, payload: CourseDesignCreate, outline: dict | None = None) -> dict:
+def _normalize_schedule_id(schedule_id: str | None, archive: dict) -> str | None:
+    """Return the archive-local lecture id used by persisted course designs.
+
+    Material-unit scope options expose ids in the namespaced form
+    ``schedule:<unit-id>:<schedule-id>``.  API callers may pass either that
+    value or the archive-local id; persistence and snapshot lookup must use a
+    single canonical representation.  Unknown values are returned unchanged
+    so the validator can provide the useful "not in this archive" error.
+    """
+    raw = str(schedule_id or "").strip()
+    if not raw:
+        return None
+    schedule_ids = {
+        str(item.get("id")).strip()
+        for item in archive.get("schedule") or []
+        if item.get("id")
+    }
+    if raw in schedule_ids:
+        return raw
+    if raw.startswith("schedule:"):
+        scoped_id = raw.rsplit(":", 1)[-1].strip()
+        if scoped_id in schedule_ids:
+            return scoped_id
+    return raw
+
+
+def validate_schedule_alignment(
+    archive: dict,
+    payload: CourseDesignCreate,
+    outline: dict | None = None,
+    unit: dict | None = None,
+) -> str | None:
+    """Validate the lecture identity carried across the preparation pipeline.
+
+    ``MaterialUnit`` stores teaching-item ids as scoped values such as
+    ``schedule:<unit-id>:<schedule-id>`` while ``CourseDesign`` persists the
+    archive-local ``schedule_id``.  Resolve both forms to the archive-local id
+    before comparing them.  The check is intentionally applied only when the
+    caller supplies an explicit ``schedule_id`` so legacy designs/outlines that
+    predate lecture binding remain readable and importable.
+    """
+    raw_requested = str(payload.schedule_id or "").strip()
+    requested_source_unit = ""
+    if raw_requested.startswith("schedule:"):
+        parts = raw_requested.split(":")
+        if len(parts) >= 3:
+            requested_source_unit = parts[-2].strip()
+    if requested_source_unit and unit:
+        allowed_units = _allowed_scope_unit_ids(unit, archive)
+        if requested_source_unit not in allowed_units:
+            raise CrossArchiveReferenceError("所选讲次来自关联资料库，不能导入当前课程设计，请选择当前资料库的讲次")
+    requested_id = _normalize_schedule_id(payload.schedule_id, archive)
+    schedule_ids = {
+        str(item.get("id")).strip()
+        for item in archive.get("schedule") or []
+        if item.get("id")
+    }
+    if requested_id and requested_id not in schedule_ids:
+        raise ValueError("所选讲次不属于当前课程资料库，可能已失效，请刷新后重新选择")
+
+    selected_session_ids = (outline or {}).get("selected_session_ids") or []
+    if unit:
+        allowed_units = _allowed_scope_unit_ids(unit, archive)
+        foreign_session_ids = []
+        for item_id in selected_session_ids:
+            raw_id = str(item_id or "").strip()
+            if not raw_id.startswith("schedule:"):
+                continue
+            parts = raw_id.split(":")
+            if len(parts) >= 3 and parts[-2].strip() not in allowed_units:
+                foreign_session_ids.append(raw_id)
+        if foreign_session_ids:
+            raise CrossArchiveReferenceError("知识大纲绑定了关联资料库的讲次，不能导入当前课程设计，请重新选择本资料库讲次")
+        stale_session_ids = [
+            str(item_id).rsplit(":", 1)[-1].strip()
+            for item_id in selected_session_ids
+            if str(item_id).strip() and str(item_id).rsplit(":", 1)[-1].strip() not in schedule_ids
+        ]
+        if stale_session_ids:
+            raise ValueError("知识大纲绑定的讲次已不在当前课程资料库，请刷新后重新匹配")
+    if not requested_id:
+        return None
+    if not selected_session_ids:
+        return requested_id
+    bound_ids = {
+        str(item_id).rsplit(":", 1)[-1].strip()
+        for item_id in selected_session_ids
+        if str(item_id).strip()
+    }
+    if bound_ids and requested_id not in bound_ids:
+        bound_label = "、".join(sorted(bound_ids))
+        raise ValueError(
+            f"课程设计讲次 {requested_id} 与知识大纲绑定讲次 {bound_label} 不一致，请重新选择匹配的大纲"
+        )
+    return requested_id
+
+
+def _allowed_scope_unit_ids(unit: dict, archive: dict) -> set[str]:
+    """Return unit ids whose scope is safe to use for the active archive."""
+    archive_id = archive.get("id")
+    allowed = {str(unit.get("id") or "")}
+    for linked in unit.get("linked_units") or []:
+        linked_id = str(linked.get("unit_id") or "").strip()
+        if linked_id and linked.get("archive_id") == archive_id:
+            allowed.add(linked_id)
+    return {item for item in allowed if item}
+
+
+def validate_outline_archive_sources(
+    archive: dict,
+    payload: CourseDesignCreate,
+    outline: dict | None,
+    unit: dict | None = None,
+) -> None:
+    """Reject outline evidence that would leak a linked archive into a design.
+
+    Scope browsing intentionally spans linked units, but a course design is
+    persisted inside one archive.  Validate both the explicit source ids and
+    every evidence record so equal material/schedule ids from two archives
+    cannot be mistaken for one another.
+    """
+    if not outline:
+        return
+    material_ids = {str(item.get("id")) for item in archive.get("materials") or [] if item.get("id")}
+    allowed_units = _allowed_scope_unit_ids(unit, archive) if unit else set()
+
+    def check_evidence(evidence: dict) -> None:
+        source_unit_id = str(evidence.get("source_unit_id") or "").strip()
+        if source_unit_id and unit and source_unit_id not in allowed_units:
+            raise CrossArchiveReferenceError("知识大纲包含关联资料库的来源，不能直接导入当前课程设计")
+        material_id = str(evidence.get("material_id") or "").strip()
+        if material_id and unit and material_id not in material_ids:
+            raise CrossArchiveReferenceError("知识大纲包含当前资料库之外的材料，不能直接导入当前课程设计")
+
+    for material_id in outline.get("source_material_ids") or []:
+        if str(material_id) and unit and str(material_id) not in material_ids:
+            raise CrossArchiveReferenceError("知识大纲包含当前资料库之外的材料，不能直接导入当前课程设计")
+    for requirement in outline.get("requirements") or []:
+        check_evidence(requirement.get("evidence") or {})
+    for node in outline.get("knowledge_nodes") or outline.get("nodes") or []:
+        for evidence in node.get("evidence") or []:
+            check_evidence(evidence)
+
+
+def create_design(
+    archive: dict,
+    payload: CourseDesignCreate,
+    outline: dict | None = None,
+    unit: dict | None = None,
+) -> dict:
+    validate_outline_archive_sources(archive, payload, outline, unit)
+    normalized_schedule_id = validate_schedule_alignment(archive, payload, outline, unit)
+    if normalized_schedule_id != payload.schedule_id:
+        payload = payload.model_copy(update={"schedule_id": normalized_schedule_id})
     materials = {item["id"]: item for item in archive.get("materials", [])}
     missing_ids = [item_id for item_id in payload.material_ids if item_id not in materials]
     if missing_ids:

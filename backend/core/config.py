@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4.1-mini"
     llm_temperature: float = Field(default=0.2, ge=0, le=2)
     llm_timeout_seconds: float = Field(default=90, ge=5, le=600)
+    # Semantic syllabus matching is an optional enhancement. Keep its request
+    # budget independent from long-form generation so the planning UI can
+    # always fall back to deterministic results promptly.
+    syllabus_match_timeout_seconds: float = Field(default=15, ge=1, le=120)
 
     @field_validator("cors_origins", mode="before")
     @classmethod

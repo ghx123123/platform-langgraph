@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CheckCircle2, Clipboard, FileText, GraduationCap, Layers3, Radio,
-  ShieldCheck, Users,
+  CheckCircle2, FileText, Radio,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import type { RunEvent, TeachingMessage, WorkflowRun } from '../types/workflow';
+import { AGENT_ROLE_DEFINITIONS, type AgentRoleDefinition, type AgentRoleKind, type AgentRolePhase } from '../lib/agentRoles';
 import './AgentFlowWorkspace.css';
 
 /**
@@ -23,32 +22,20 @@ interface AgentFlowWorkspaceProps {
   messages: TeachingMessage[];
 }
 
-type NodePhase = 'content_analysis' | 'teaching_design' | 'teach_knowledge' | 'student_question' | 'teacher_answer' | 'supervisor_comment' | 'finalize';
-
 interface FlowNode {
   key: string;
   name: string;
   role: string;
-  kind: 'analyst' | 'designer' | 'teacher' | 'student' | 'supervisor' | 'finalizer';
+  responsibility: string;
+  input: string;
+  output: string;
+  phase: AgentRolePhase;
+  kind: AgentRoleKind;
+  icon: AgentRoleDefinition['icon'];
   state: 'done' | 'running' | 'waiting';
   iteration: number;
   message?: string;
 }
-
-const NODE_ORDER: Array<{ key: string; name: string; role: string; kind: FlowNode['kind']; phase: NodePhase }> = [
-  { key: 'analysis', name: '教材分析员', role: '内容剖析 · 重难点', kind: 'analyst', phase: 'content_analysis' },
-  { key: 'design', name: '教学设计员', role: '目标 · 环节 · 练习', kind: 'designer', phase: 'teaching_design' },
-  { key: 'teach', name: '讲授教师', role: '生成回答 · 整合建议', kind: 'teacher', phase: 'teach_knowledge' },
-  { key: 'students', name: '分层学生', role: '拓展/进阶/基础问题', kind: 'student', phase: 'student_question' },
-  { key: 'answer', name: '教师答疑', role: '回应学生 · 澄清误区', kind: 'teacher', phase: 'teacher_answer' },
-  { key: 'supervisor', name: '教学督导', role: '评分 · 改进建议', kind: 'supervisor', phase: 'supervisor_comment' },
-  { key: 'finalize', name: '成果整理员', role: '汇总交付', kind: 'finalizer', phase: 'finalize' },
-];
-
-const KIND_ICON: Record<FlowNode['kind'], LucideIcon> = {
-  analyst: FileText, designer: Layers3, teacher: GraduationCap,
-  student: Users, supervisor: ShieldCheck, finalizer: Clipboard,
-};
 
 function phaseDone(events: RunEvent[], phase: string): boolean {
   return events.some((e) => ['node.completed', 'review.completed'].includes(e.event_type) && e.node === phase);
@@ -72,26 +59,32 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
   const streamBodyRef = useRef<HTMLDivElement | null>(null);
   const streamTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
-  const nodes: FlowNode[] = useMemo(() => NODE_ORDER.map((def) => {
+  const nodes: FlowNode[] = useMemo(() => {
+    const hasNodeProgress = events.some((event) => ['node.started', 'node.completed', 'review.completed'].includes(event.event_type));
+    return AGENT_ROLE_DEFINITIONS.map((def, index) => {
     const iteration = def.phase === 'teach_knowledge' || def.phase === 'student_question' || def.phase === 'teacher_answer'
       ? Number(run.teaching_data.current_iteration ?? 0)
       : 0;
     const state: FlowNode['state'] = phaseDone(events, def.phase)
       ? 'done'
-      : phaseRunning(events, def.phase, run) ? 'running' : 'waiting';
+      : phaseRunning(events, def.phase, run) || (!hasNodeProgress && ['queued', 'running'].includes(run.status) && index === 0) ? 'running' : 'waiting';
     // 该角色最近一条真实产出
     const latestMsg = [...messages].reverse().find((m) => m.phase === def.phase);
-    return { key: def.key, name: def.name, role: def.role, kind: def.kind, state, iteration, message: latestMsg?.content || '' };
-  }), [events, messages, run]);
+      return { key: def.key, name: def.name, role: def.role, responsibility: def.responsibility, input: def.input, output: def.output, phase: def.phase, kind: def.kind, icon: def.icon, state, iteration, message: latestMsg?.content || '' };
+    });
+  }, [events, messages, run]);
 
   const selectedNode = nodes.find((n) => n.key === selected) || nodes[0];
   const chatMessages = useMemo(() => messages.slice(-8), [messages]);
 
+  // Focus the live agent automatically when a run starts or advances.
+  useEffect(() => {
+    const running = nodes.find((node) => node.state === 'running');
+    if (running) setSelected(running.key);
+  }, [run.id, events.length]);
+
   // 节点 key → workflow phase 映射(node.token 事件的 node 字段用的是 phase)
-  const nodePhaseByKey: Record<string, string> = {
-    analysis: 'content_analysis', design: 'teaching_design', teach: 'teach_knowledge',
-    students: 'student_question', answer: 'teacher_answer', supervisor: 'supervisor_comment', finalize: 'finalize',
-  };
+  const rolePhase = selectedNode?.phase;
   // 真实 token 流: 从 events 提取 node.token(按 node 分组的累积文本), 供右侧 dsh 流展示"真实正在生成"
   const tokenTexts = useMemo(() => {
     const map: Record<string, string> = {};
@@ -103,24 +96,34 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
     });
     return map;
   }, [events]);
-  const liveTokenText = tokenTexts[nodePhaseByKey[selected]] || '';
+  const liveTokenText = rolePhase ? tokenTexts[rolePhase] || '' : '';
   const hasLiveToken = liveTokenText.length > 0;
+  // A persisted terminal status is authoritative. Historical token events are
+  // replayed as read-only content and must not make the panel look live.
+  const isTerminalRun = ['completed', 'failed', 'cancelled'].includes(run.status);
+  const shouldStream = !isTerminalRun && selectedNode?.state === 'running';
 
   // dsh 生成过程: running 时用真实 node.token 流; 否则回退打字流(展示已有 message)
   useEffect(() => {
     setStreamDone(false);
-    setStreaming(true);
+    setStreaming(shouldStream);
     if (streamTimer.current) clearInterval(streamTimer.current);
     const body = streamBodyRef.current;
     // 真 token 流: 直接累积渲染(新事件到达自动追加)
     if (hasLiveToken) {
       if (body) { body.textContent = liveTokenText; body.scrollTop = body.scrollHeight; }
-      setStreamDone(false);
-      setStreaming(true);
+      setStreamDone(!shouldStream);
+      setStreaming(shouldStream);
       return () => { if (streamTimer.current) clearInterval(streamTimer.current); };
     }
     const text = (selectedNode?.message || `正在通过 dsh agent 处理「${selectedNode?.name || '当前'}」任务…`)
       .replace(/<\\?[a-z/][^>]*>/gi, '');
+    if (!shouldStream) {
+      if (body) { body.textContent = text; body.scrollTop = body.scrollHeight; }
+      setStreaming(false);
+      setStreamDone(Boolean(selectedNode?.message) || selectedNode?.state === 'done' || isTerminalRun);
+      return () => { if (streamTimer.current) clearInterval(streamTimer.current); };
+    }
     if (body) {
       body.textContent = '';
       let i = 0;
@@ -141,31 +144,31 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
       }, 18);
     }
     return () => { if (streamTimer.current) clearInterval(streamTimer.current); };
-  }, [selected, selectedNode?.message, liveTokenText, hasLiveToken]);
+  }, [selected, selectedNode?.message, selectedNode?.state, liveTokenText, hasLiveToken, shouldStream, isTerminalRun]);
 
   const runningCount = nodes.filter((n) => n.state === 'running').length;
   const doneCount = nodes.filter((n) => n.state === 'done').length;
 
   // 画布布局锚点(与原型一致): 主线 y=204 水平 4 个 + 学生列 x=690 + 第二行 y=400
   const LAYOUT: Record<string, { x: number; y: number }> = {
-    analysis: { x: 26, y: 204 }, designer: { x: 240, y: 204 }, teach: { x: 450, y: 204 },
-    students: { x: 690, y: 200 }, answer: { x: 890, y: 204 },
-    supervisor: { x: 760, y: 400 }, finalize: { x: 988, y: 400 },
+    analysis: { x: 10, y: 48 }, design: { x: 200, y: 48 }, teach: { x: 390, y: 48 },
+    students: { x: 10, y: 205 }, answer: { x: 150, y: 205 },
+    supervisor: { x: 290, y: 205 }, finalize: { x: 430, y: 205 },
   };
   const EDGES: Array<{ from: string; cls: string; d: string }> = [
-    { from: 'analysis', cls: '', d: 'M196 231 C220 231 218 231 238 231' },
-    { from: 'designer', cls: '', d: 'M410 231 C430 231 428 231 448 231' },
-    { from: 'teach', cls: '', d: 'M646 231 C668 231 668 224 688 224' },
-    { from: 'students', cls: 'extra', d: 'M836 224 C862 224 868 228 888 228' },
-    { from: 'answer', cls: 'super', d: 'M975 240 C1010 240 1010 424 1000 426' },
-    { from: 'supervisor', cls: '', d: 'M946 430 L986 430' },
+    { from: 'analysis', cls: '', d: 'M140 74 L200 74' },
+    { from: 'design', cls: '', d: 'M330 74 L390 74' },
+    { from: 'teach', cls: 'extra', d: 'M455 111 C455 150 75 150 75 205' },
+    { from: 'students', cls: '', d: 'M140 231 L150 231' },
+    { from: 'answer', cls: 'super', d: 'M280 231 L290 231' },
+    { from: 'supervisor', cls: '', d: 'M420 231 L430 231' },
   ];
 
   return (
     <div className="afw-root">
       {/* 顶部: 流程标题 + 团队进度 + 状态 */}
       <div className="afw-top">
-        <div className="afw-top-title"><h3>多智能体协作流程</h3><span>团队A 备课设计组 · 团队B 课堂互动组 · 团队C 督导优化组</span></div>
+        <div className="afw-top-title"><h3>角色协作工作台</h3><span>每个角色独立负责一类产出，通过明确输入/输出进行协作</span></div>
         <div className="afw-top-progress">
           <span className={`afw-progress-pill ${runningCount > 0 ? 'run' : doneCount === nodes.length ? 'done' : 'wait'}`}>
             <Radio size={12} />{runningCount > 0 ? `${runningCount} 个智能体执行中` : doneCount === nodes.length ? '全部任务已交付' : '等待调度'}
@@ -178,10 +181,10 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
       <div className="afw-body">
         {/* 左: 团队名册 */}
         <aside className="afw-roster">
-          <div className="afw-roster-head">团队成员 <span>{nodes.length}</span></div>
+          <div className="afw-roster-head">角色目录 <span>{nodes.length}</span></div>
           <div className="afw-roster-list">
             {nodes.map((node) => {
-              const Icon = KIND_ICON[node.kind];
+              const Icon = node.icon;
               return (
                 <button key={node.key} type="button" className={`afw-member ${selected === node.key ? 'active' : ''}`} onClick={() => setSelected(node.key)}>
                   <span className={`afw-member-ico kind-${node.kind}`}><Icon size={14} /></span>                  <span className="afw-member-info"><b>{node.name}</b><small>{node.role}</small></span>
@@ -194,27 +197,28 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
               );
             })}
           </div>
-          <div className="afw-roster-foot">点击成员查看 dsh 生成过程</div>
+          <div className="afw-roster-foot">点击角色查看其专属 dsh 产出</div>
         </aside>
 
         {/* 中: 流程图 */}
         <div className="afw-canvas-wrap">
-          <div className="afw-canvas scale-fit" style={{ '--afw-scale': '0.55' } as React.CSSProperties}>
-          <svg className="afw-edges" width="1180" height="520" viewBox="0 0 1180 520" aria-hidden>
+          <div className="afw-canvas scale-fit" style={{ '--afw-scale': '0.72' } as React.CSSProperties}>
+          <svg className="afw-edges" width="560" height="330" viewBox="0 0 560 330" aria-hidden>
+            <defs><marker id="afw-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7 Z" fill="currentColor" /></marker></defs>
             {EDGES.map((edge, index) => {
               const from = nodes.find((n) => n.key === edge.from);
               const done = from?.state === 'done';
-              return <path key={`${edge.from}-${index}`} className={`afw-edge ${edge.cls} ${done ? 'done' : ''}`} d={edge.d} />;
+              return <path key={`${edge.from}-${index}`} className={`afw-edge ${edge.cls} ${done ? 'done' : ''}`} d={edge.d} markerEnd="url(#afw-arrow)" />;
             })}
           </svg>
           <div className="afw-nodes">
             {nodes.map((node) => {
-              const Icon = KIND_ICON[node.kind];
+              const Icon = node.icon;
               const pos = LAYOUT[node.key];
               if (!pos) return null;
               return (
                 <button key={node.key} type="button" className={`afw-node state-${node.state} ${selected === node.key ? 'active' : ''}`}
-                  style={{ left: `${pos.x}px`, top: `${pos.y}px`, width: node.key === 'students' ? '146px' : '196px' }}
+                  style={{ left: `${pos.x}px`, top: `${pos.y}px`, width: '130px' }}
                   onClick={() => setSelected(node.key)}>
                   {node.state === 'running' && <span className="afw-node-frame" />}
                   <span className={`afw-node-ico kind-${node.kind}`}><Icon size={16} /><i className="afw-node-dot" /></span>
@@ -233,6 +237,27 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
           </div>
         </div>
 
+        {/* Linear fallback keeps the same event-backed states usable on touch
+            screens where the spatial SVG cannot fit without horizontal scroll. */}
+        <div className="afw-mobile-flow" aria-label="智能体执行顺序">
+          {nodes.map((node, index) => {
+            const Icon = node.icon;
+            return (
+              <button
+                key={node.key}
+                type="button"
+                className={`afw-mobile-step state-${node.state} ${selected === node.key ? 'active' : ''}`}
+                onClick={() => setSelected(node.key)}
+              >
+                <span className="afw-mobile-index">{node.state === 'done' ? <CheckCircle2 size={14} /> : index + 1}</span>
+                <span className={`afw-member-ico kind-${node.kind}`}><Icon size={14} /></span>
+                <span className="afw-mobile-copy"><b>{node.name}</b><small>{node.role}</small></span>
+                <span className="afw-mobile-status">{node.state === 'done' ? '已完成' : node.state === 'running' ? '进行中' : '待启动'}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* 右: 节点详情 */}
         <aside className="afw-detail">
           <div className="afw-detail-head">
@@ -241,17 +266,18 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
             <span className={`afw-detail-badge state-${selectedNode.state}`}>{selectedNode.state === 'done' ? '已完成' : selectedNode.state === 'running' ? '进行中' : '待启动'}</span>
           </div>
           <div className="afw-detail-meta">
-            <span>所属团队：{selectedNode.kind === 'supervisor' ? '团队C' : selectedNode.kind === 'student' ? '团队B' : '团队A'}</span>
-            <span>轮次：{selectedNode.iteration > 0 ? `第 ${selectedNode.iteration} 轮` : '教学准备'}</span>
-            <span>成员名册：{nodes.map((n) => n.name.split('·')[0].slice(0, 2)).join(' / ')}</span>
+            <span><b>职责边界：</b>{selectedNode.responsibility}</span>
+            <span><b>输入：</b>{selectedNode.input}</span>
+            <span><b>输出：</b>{selectedNode.output}</span>
+            <span><b>当前轮次：</b>{selectedNode.iteration > 0 ? `第 ${selectedNode.iteration} 轮` : '教学准备'}</span>
           </div>
 
           <div className="afw-detail-sec">
-            <div className="afw-sec-title"><Radio size={13} />dsh 生成过程 <em className="afw-live">{streaming ? '● 实时流' : streamDone ? '● 完成' : '● 待开始'}</em></div>
-            <div className="afw-dsh">
+            <div className="afw-sec-title"><Radio size={13} />dsh 生成过程 <em className="afw-live">{streaming ? '● 实时流' : streamDone ? (isTerminalRun ? '● 历史回放' : '● 完成') : '● 待开始'}</em></div>
+            <div className={`afw-dsh ${streaming ? 'is-streaming' : ''}`}>
               <div className="afw-dsh-head"><b>dsh-agent · {selectedNode.name} · deepseek-v4-flash</b><span>{streaming ? '生成中' : streamDone ? '已完成' : '空闲'}</span></div>
               <div className="afw-dsh-body" ref={streamBodyRef} />
-              <div className="afw-dsh-foot">{streaming ? `调用 generate · 第 ${selectedNode.iteration > 0 ? selectedNode.iteration : 1}/3 轮` : streamDone ? '交付完成，等待下游任务认领' : '等待进入本轮任务队列'}</div>
+              <div className="afw-dsh-foot">{streaming ? `调用 generate · 第 ${selectedNode.iteration > 0 ? selectedNode.iteration : 1}/3 轮` : streamDone ? (isTerminalRun ? '本次会话已结束，可回放生成记录' : '交付完成，等待下游任务认领') : '等待进入本轮任务队列'}</div>
             </div>
           </div>
 

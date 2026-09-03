@@ -189,6 +189,60 @@ def build_material_unit_file(material: dict, document: dict | None) -> dict:
     }
 
 
+def refresh_material_unit_snapshot(record: dict, archive: dict | None) -> dict:
+    """Rebuild a unit's own material snapshot from the current archive state.
+
+    Material parsing is asynchronous, so the JSON record can legitimately lag
+    behind its archive.  Both the list and detail endpoints use this helper to
+    expose the same counts and file status without mutating the persisted unit.
+    Missing material ids remain counted as registered files and are called out
+    in the overview instead of disappearing silently.
+    """
+    if not archive:
+        return dict(record)
+    ordered_ids = list(dict.fromkeys(record.get("material_ids") or []))
+    if not ordered_ids:
+        return dict(record)
+    known = {
+        item["id"]: item
+        for item in archive.get("materials") or []
+        if isinstance(item, dict) and item.get("id")
+    }
+    documents = archive.get("_documents") or {}
+    rebuilt = [
+        build_material_unit_file(known[material_id], documents.get(material_id))
+        for material_id in ordered_ids
+        if material_id in known
+    ]
+    missing_count = len(ordered_ids) - len(rebuilt)
+    parsed = [item for item in rebuilt if item.get("parse_status") == "parsed"]
+    formats = [str(item.get("extension") or "").lstrip(".").upper() or "FILE" for item in rebuilt]
+    parsed_names = "、".join(str(item.get("name") or "") for item in parsed[:3])
+    if missing_count:
+        overview = (
+            f"本单元登记 {len(ordered_ids)} 份资料，其中 {missing_count} 份已不在课程资料库中（可能源文件被移除），"
+            f"显示 {len(rebuilt)} 份。可在资料库重新关联或从单元移除失效资料。"
+        )
+    else:
+        overview = (
+            f"本单元包含 {len(rebuilt)} 份资料，已完成 {len(parsed)} 份内容提取。"
+            f"资料格式包括 {'、'.join(dict.fromkeys(formats)) or '未知格式'}。"
+            + (f"已分析文件：{parsed_names}{'等' if len(parsed) > 3 else ''}。" if parsed else "当前没有可用的正文分析结果。")
+        )
+    points = [point for item in parsed for point in item.get("knowledge_points") or []]
+    refreshed = {
+        **record,
+        "files": rebuilt,
+        "material_count": len(ordered_ids),
+        "parsed_count": len(parsed),
+        "total_characters": sum(int(item.get("character_count") or 0) for item in rebuilt),
+        "source_category_counts": dict(Counter(item.get("category", "other") for item in rebuilt)),
+        "key_points": [point for point, _ in Counter(points).most_common(12)],
+        "overview": overview,
+    }
+    return refreshed
+
+
 def build_link(unit: dict) -> dict:
     return {
         "unit_id": unit["id"], "title": unit.get("title", "资料单元"),
@@ -338,6 +392,7 @@ def build_scope_options(unit: dict, linked: list[dict], archives: dict[str, dict
             teaching_items.append({
                 "id": f"schedule:{source.get('id')}:{item.get('id')}", "content": item.get("content", ""),
                 "title": lesson_title or item.get("content", "")[:50], "source_material_id": item.get("source_material_id", ""),
+                "archive_id": archive.get("id") or source.get("archive_id"),
                 "source_unit_id": source.get("id", ""), "source_name": source_name,
                 "document_id": material_map.get(item.get("source_material_id"), {}).get("document_id"),
                 "source_hash": material_map.get(item.get("source_material_id"), {}).get("sha256"),
@@ -355,6 +410,7 @@ def build_scope_options(unit: dict, linked: list[dict], archives: dict[str, dict
                     stable_key = hashlib.sha256(title.encode("utf-8")).hexdigest()[:10]
                     syllabus_items.append({
                         "id": f"syllabus:{source.get('id')}:{material.get('id')}:{stable_key}", "title": title[:80], "content": value[:420] or title,
+                        "archive_id": archive.get("id") or source.get("archive_id"),
                         "source_material_id": material.get("id", ""), "source_unit_id": source.get("id", ""), "source_name": source_name,
                         "document_id": material.get("document_id"), "source_hash": material.get("sha256"),
                         "locator": f"section:{section.get('id') or index}",
@@ -379,13 +435,18 @@ def build_scope_options(unit: dict, linked: list[dict], archives: dict[str, dict
                 )
                 textbook_outline.append({
                     "id": node_id,
-                    "title": title, "level": section["level"],
+                    "title": title, "level": section["level"], "archive_id": archive.get("id") or source.get("archive_id"),
                     "preview": section.get("preview", ""), "source_material_id": material.get("id", ""),
                     "source_unit_id": source.get("id", ""), "source_name": source_name,
                     "document_id": material.get("document_id"), "source_hash": material.get("sha256"),
                     "locator": f"section:{section.get('id') or index}",
                 })
-    return {"unit_id": unit["id"], "course_title": unit.get("archive_name", "课程"), "teaching_items": teaching_items[:120], "syllabus_items": syllabus_items[:120], "textbook_outline": textbook_outline[:300]}
+    return {
+        "unit_id": unit["id"], "course_title": unit.get("archive_name", "课程"),
+        "archive_id": unit.get("archive_id"),
+        "teaching_items": teaching_items[:120], "syllabus_items": syllabus_items[:120],
+        "textbook_outline": textbook_outline[:300],
+    }
 
 
 def build_initial_outline(options: dict, payload: dict) -> dict:
@@ -519,6 +580,14 @@ def match_syllabus_requirements(
     selected = [teaching_map[item_id] for item_id in teaching_item_ids if item_id in teaching_map]
     if not selected:
         raise KeyError("未找到选定讲次")
+    archive_id = options.get("archive_id")
+    if archive_id:
+        foreign_sessions = [
+            item for item in selected
+            if item.get("archive_id") and item.get("archive_id") != archive_id
+        ]
+        if foreign_sessions:
+            raise ValueError("所选讲次来自关联资料库，不能用于当前课程设计，请选择当前资料库的讲次")
     session_text = "\n".join(f"{item.get('title', '')} {item.get('content', '')}" for item in selected)
     model_map = {
         str(item.get("id")): item for item in model_matches or []
@@ -526,6 +595,10 @@ def match_syllabus_requirements(
     }
     candidates: list[dict] = []
     for item in options.get("syllabus_items") or []:
+        if archive_id and item.get("archive_id") and item.get("archive_id") != archive_id:
+            # Cross-archive requirements remain browseable in scope options,
+            # but cannot silently become part of a current-course outline.
+            continue
         score, reason = _syllabus_similarity(session_text, f"{item.get('title', '')} {item.get('content', '')}")
         category = classify_syllabus_requirement(item.get("title", ""), item.get("content", ""))
         model_item = model_map.get(item["id"])
@@ -581,6 +654,22 @@ def create_knowledge_outline(
     teaching_map = {item["id"]: item for item in options.get("teaching_items") or []}
     syllabus_map = {item["id"]: item for item in options.get("syllabus_items") or []}
     textbook_map = {item["id"]: item for item in options.get("textbook_outline") or []}
+    archive_id = options.get("archive_id")
+    if archive_id:
+        selected_ids_by_kind = (
+            ("讲次", payload.get("teaching_item_ids", []), teaching_map),
+            ("大纲要求", payload.get("syllabus_item_ids", []), syllabus_map),
+            ("教材范围", payload.get("outline_node_ids", []), textbook_map),
+        )
+        for label, ids, mapping in selected_ids_by_kind:
+            foreign = [
+                mapping[item_id] for item_id in ids
+                if item_id in mapping
+                and mapping[item_id].get("archive_id")
+                and mapping[item_id].get("archive_id") != archive_id
+            ]
+            if foreign:
+                raise ValueError(f"所选{label}来自关联资料库，不能直接进入当前课程设计，请选择当前资料库内容")
     # 容错: 失效/过期范围选项不再整体报错, 静默跳过.
     # 保留匹配项; 只有用户明确选择了却全部失效时才提示刷新重选(极端情况, 前端已对齐则不会发生).
     def _keep_valid(ids: list[str] | None, valid_map: dict[str, object]) -> list[str]:
