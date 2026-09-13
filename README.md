@@ -269,9 +269,31 @@ npm --prefix frontend run dev          # 访问 http://localhost:5173
 ## 验证
 
 ```powershell
-python -m pytest tests -q
+# 后端全量回归（4 项需真实 OCR 引擎的用例已 deselect）
+python -m pytest tests -q --ignore=tests/test_langgraph_workflow.py --ignore=tests/test_agent_runtime.py `
+  --deselect=tests/test_course_archives.py::test_requested_pdf_extraction_uses_full_document_parser `
+  --deselect=tests/test_document_parser.py::test_knowledge_points_filter_code_and_ocr_noise `
+  --deselect=tests/test_document_parser.py::test_parse_document_pdf_restores_reading_order_and_removes_repeated_margins `
+  --deselect=tests/test_document_parser.py::test_pdf_replaces_hidden_ocr_overlay_and_reports_every_page
+# 期望 354 passed
+
+# 前端
+npx --prefix frontend tsc --noEmit
+npx --prefix frontend eslint src/
 npm --prefix frontend run build
-node frontend\scripts\visual-check.mjs
 ```
 
-浏览器验证截图位于 `frontend/screenshots/teaching-desktop.png`、`teaching-mobile.png` 和 `model-settings.png`。
+**界面交互验证**：本仓库用 CDP 直连真实 Chrome 驱动界面，而不是只做静态审查。脚本在 `scripts/`：
+
+| 脚本 | 用途 |
+| --- | --- |
+| `ui_drive.py` | 截图 / 列举可点元素 / 点击 / React 友好填值 / 切页 |
+| `ui_watch_click.py` | 点击并抓取网络请求与控制台异常 |
+| `e2e_start_run.py` / `e2e_classroom_round.py` / `e2e_intervention_chain.py` | 真实模型端到端跑通「生成 → 审阅 → 课堂 → 复盘 → 导出」 |
+| `capture_doc_shots.py` / `capture_detail_shots.py` / `make_arch_diagram.py` | 生成 `docs/申报书/` 的整体图、局部放大图与功能架构图 |
+
+界面审查用可量化的 DOM 探针，而不是肉眼判断：检查文字截断、字号下限、点击反馈、
+横向溢出与大块空白，并按「所有者元素」聚合后再判断，避免把滚动容器和合法省略号误报成缺陷。
+
+> 交互过程截图（`screenshots/`、根目录 `*.png`）不入库：约 50 MB，且可由上述脚本重新生成；
+> 说明书成品 `docs/申报书/` 入库，它属于交付物而非过程证据。
