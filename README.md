@@ -99,6 +99,39 @@ flowchart TB
 
 四个教师页面可直接访问：`/hub`、`/materials`、`/design`、`/exports`。课程设计记录把上游数据分为原始文件、提取正文、结构化讲次和生成成果四层引用；每条引用保留资料库 ID、材料/文档 ID、SHA-256、来源路径、正文定位和原页/原文件地址，下游编辑和导出不会切断来源链。
 
+## 课程设计课堂演练（classroom_v2）
+
+除上面的多轮教学会话外，课程设计还提供一条面向"一节课"的完整链路：
+教材研读 → 知识大纲 → 课件生成 → 教师审阅 → 多智能体课堂演练 → 督导复盘 → 教案导出。
+与教学会话的区别在于它以**逐页课件**为单位推进，并把课堂中的每一次发言记录为可追溯的事件。
+
+```text
+资料单元（选讲次 / 教材范围 / 知识大纲版本）
+  -> 课程设计.生成过程
+       1 资料分析 -> 2 PPT V1 -> 3 用户审阅(教师决策) -> 4 课堂演练(教师可介入)
+       -> 5 督导复盘 -> 6 版本修订 -> 7 定稿
+  -> 成果中心（教案定稿 / 教学资料包）
+```
+
+**五类智能体角色**：教师智能体、拓展型/进阶型/基础型学生智能体各 1 个、督导智能体 1 个。
+三类学生刻意设定不同认知水平与提问倾向，使教师在一次演练中同时看到三个层次的理解障碍。
+
+**教师介入是一等公民**：教师在演练中的输入被建模为带生命周期的"教师指令"——
+意图（提问 / 纠正 / 要求）× 生效范围（本页 / 本轮剩余 / 整节课）。
+指令会注入后续所有智能体的上下文并持续生效；督导会判定它是否被遵守；
+涉及课件内容的指令生成可追溯到字段级的修改记录；教师也可以随时撤销一条指令。
+
+**证据链闭环**：督导的每条评价引用具体课堂事件编号，课件的每处修改说明来自
+哪条督导建议或教师指令。正向与反向都可核查。
+
+**成果口径**：`GET /api/data-hub/results` 按类别汇总可交付成果
+（教案 / 课件 / 教研 / 资料包），各类单位不同、不做跨类合计。
+课件的 `ready`/`final` 版本与督导报告此前不进任何成果统计，现已纳入。
+
+**教案状态**：`reviewed` 是服务端校验过的状态——缺少教学目标/知识点/教学过程时
+拒绝标记，且任何改动（内容编排插入、会话同步、大纲升级）都会把设计退回 `draft`；
+导出成功则自动落 `reviewed`。
+
 ## 当前能力
 
 - 数据中台按学期、课程和章节资料单元统一管理多个课程库；当前目录支持上传文件、上传文件夹、新建子文件夹、移动、重命名、单项/批量删除和非空文件夹递归删除。中台只展示原始文件、原页预览与文件信息。
@@ -202,6 +235,18 @@ npm --prefix frontend run dev
 | POST | `/api/workflows/runs/{id}/teacher-draft/generations` | 重新生成当前资料块 |
 | GET | `/api/workflows/runs/{id}/report.md` | 导出教师版或学生版 Markdown |
 | GET | `/api/workflows/runs/{id}/report.pdf` | 导出教师版或学生版 PDF |
+| GET | `/api/data-hub/results` | 成果中心读数：按教案/课件/教研/资料包分类汇总 |
+| POST | `/api/classroom/runs/{run_id}/prepare` | 生成逐页 Lesson Blueprint（PPT 文案+讲稿） |
+| POST | `/api/classroom/runs/{run_id}/start` | 开始课堂演练（审阅通过后由教师显式触发） |
+| GET | `/api/classroom/runs/{run_id}/start-status` | 查询准备/演练阶段与进度 |
+| GET | `/api/classroom/runs/{run_id}/lesson-versions` | 查询课件版本 |
+| POST | `/api/classroom/runs/{run_id}/lesson-versions/{id}/approve` | 确认课件（`auto_start` 控制是否直接进课堂） |
+| POST | `/api/classroom/runs/{run_id}/rounds/{round_id}/interventions` | 教师课堂介入（意图 × 生效范围） |
+| POST | `/api/classroom/runs/{run_id}/rounds/{round_id}/pause\|resume\|stop` | 课堂控制 |
+| GET | `/api/classroom/runs/{run_id}/rounds/{round_id}/report` | 本轮督导报告 |
+| GET | `/api/classroom/runs/{run_id}/rounds/{round_id}/observations` | 逐页督导观察与证据 |
+| GET/DELETE | `/api/classroom/runs/{run_id}/directives` | 本轮教师指令；DELETE 撤销一条指令 |
+| GET | `/api/classroom/runs/{run_id}/revision-patches` | 课件修订记录（字段级溯源） |
 | GET | `/api/settings/model` | 获取脱敏后的模型设置 |
 | PUT | `/api/settings/model` | 保存并热切换模型 |
 | POST | `/api/settings/model/test` | 测试候选模型连接 |
