@@ -365,6 +365,153 @@ def organize_source_archive(catalog: dict, layouts: list[dict], archive_id: str,
     }
 
 
+RESULT_TYPE_LABELS = {
+    "lesson_plan": "教案成果",
+    "courseware": "课件成果",
+    "research": "教研成果",
+    "package": "教学资料包",
+}
+
+
+def build_results(
+    designs: list[dict],
+    runs: list[dict],
+    compositions: list[dict],
+    classroom: dict[str, dict] | None = None,
+) -> dict:
+    """把各模块的交付物汇总成一份带类型的成果清单。
+
+    每一类成果各自计数，单位不同（份 / 套 / 条 / 个），所以不跨类求和——旧口径
+    `资料包数 + 导出次数` 把两种异质单位相加，重复导出还会虚高。
+
+    classroom 参数按 run_id 提供课堂演练的产物（课件版本、督导报告）。
+    课堂库不存在时传 None，对应行数记 0 并给出告警，不影响其他成果。
+    """
+    classroom = classroom or {}
+
+    lesson_plans = []
+    for design in designs:
+        exports = design.get("exports") or []
+        lesson_plans.append({
+            "id": design["id"],
+            "result_type": "lesson_plan",
+            "title": design.get("title") or "未命名教案",
+            "detail": f"第 {design.get('version', 1)} 版",
+            "archive_id": design.get("archive_id"),
+            "design_id": design["id"],
+            "run_id": design.get("run_id"),
+            "confirmed": design.get("status") == "reviewed",
+            "exported": bool(exports),
+            # 导出次数只作展示，不参与"成果数量"的计数。
+            "export_count": len(exports),
+            "updated_at": str(design.get("updated_at") or ""),
+        })
+
+    courseware, research = [], []
+    for run in runs:
+        info = classroom.get(run.get("id"))
+        if not info:
+            continue
+        lessons = info.get("lessons") or []
+        latest = info.get("latest_lesson")
+        if latest:
+            courseware.append({
+                "id": latest["id"],
+                "result_type": "courseware",
+                "title": run.get("objective") or "未命名课件",
+                "detail": f"V{latest.get('version_number', 1)} · {len(latest.get('slides') or [])} 页 · {latest.get('status', '')}",
+                "design_id": (run.get("teaching_data") or {}).get("design_id"),
+                "run_id": run.get("id"),
+                "confirmed": latest.get("status") in ("ready", "final"),
+                "updated_at": str(latest.get("updated_at") or ""),
+                "count": 1,
+            })
+        if info.get("rounds"):
+            rounds = info["rounds"]
+            reports = info.get("reports") or 0
+            research.append({
+                "id": f"research:{run.get('id')}",
+                "result_type": "research",
+                "title": run.get("objective") or "未命名教学会话",
+                "detail": f"{len(rounds)} 轮演练 · {reports} 份督导报告 · {len(lessons)} 个课件版本",
+                "design_id": (run.get("teaching_data") or {}).get("design_id"),
+                "run_id": run.get("id"),
+                "confirmed": (run.get("review") or {}).get("score") is not None,
+                "updated_at": str(run.get("updated_at") or ""),
+                "count": len(rounds),
+            })
+
+    lesson_plans.sort(key=lambda item: item["updated_at"], reverse=True)
+    courseware.sort(key=lambda item: item["updated_at"], reverse=True)
+    research.sort(key=lambda item: item["updated_at"], reverse=True)
+    packages = [
+        {
+            "id": item["id"],
+            "result_type": "package",
+            "title": item.get("title") or "未命名教学资料包",
+            "detail": f"第 {item.get('version', 1)} 版 · {len(item.get('blocks') or [])} 个内容块",
+            "archive_id": item.get("archive_id"),
+            "updated_at": str(item.get("updated_at") or ""),
+            "count": 1,
+        }
+        for item in compositions
+    ]
+
+    rows = [
+        {"result_type": "lesson_plan", "label": RESULT_TYPE_LABELS["lesson_plan"],
+         "count": len(lesson_plans),
+         "detail": f"{sum(1 for i in lesson_plans if i['confirmed'])} 份已审核 · "
+                   f"{sum(1 for i in lesson_plans if i['exported'])} 份已导出"},
+        {"result_type": "courseware", "label": RESULT_TYPE_LABELS["courseware"],
+         "count": len(courseware),
+         "detail": f"{sum(1 for i in courseware if i['confirmed'])} 套已审阅"},
+        {"result_type": "research", "label": RESULT_TYPE_LABELS["research"],
+         "count": len(research),
+         "detail": f"共 {sum(i['count'] for i in research)} 轮课堂演练"},
+        {"result_type": "package", "label": RESULT_TYPE_LABELS["package"],
+         "count": len(packages),
+         "detail": f"{sum(len(i.get('blocks') or []) for i in compositions)} 个内容块"},
+    ]
+    total = sum(row["count"] for row in rows)
+    return {
+        "designs": lesson_plans, "courseware": courseware,
+        "research": research, "packages": packages,
+        "summary": {"rows": rows, "total": total},
+    }
+
+
+def _generated_block_counts(designs, runs, compositions) -> dict[str, int]:
+    """Count the non-source content blocks the catalog would produce.
+
+    build_catalog materialises every block, which the dashboard's summary_only path
+    skips entirely — that made `generated_blocks` structurally 0 no matter how much
+    content existed. This mirrors the same producers without building block bodies,
+    so the count stays honest and cheap.
+    """
+    counts: dict[str, int] = {}
+    for design in designs:
+        counts["teaching_design"] = counts.get("teaching_design", 0) + 1
+        if design.get("content", {}).get("ideological_elements"):
+            counts["ideological_element"] = counts.get("ideological_element", 0) + 1
+    kind_by_phase = {
+        "student_question": "student_question",
+        "teacher_answer": "teacher_answer",
+        "supervisor_comment": "supervisor_review",
+    }
+    for run in runs:
+        if run.get("teaching_data", {}).get("teaching_framework"):
+            counts["teaching_design"] = counts.get("teaching_design", 0) + 1
+        for message in run.get("teaching_data", {}).get("messages", []) or []:
+            kind = kind_by_phase.get(message.get("phase"))
+            if kind:
+                counts[kind] = counts.get(kind, 0) + 1
+    for composition in compositions or []:
+        for item in composition.get("blocks", []):
+            kind = item.get("kind", "imported")
+            counts[kind] = counts.get(kind, 0) + 1
+    return counts
+
+
 def build_catalog(
     archives: list[dict],
     designs: list[dict],
@@ -372,6 +519,7 @@ def build_catalog(
     compositions: list[dict] | None = None,
     include_blocks: bool = True,
     target_unit_id: str | None = None,
+    stats_only: bool = False,
 ) -> dict:
     designs_by_archive: dict[str, list[dict]] = {}
     run_design: dict[str, dict] = {}
@@ -525,11 +673,19 @@ def build_catalog(
                 "editable": True, "updated_at": composition.get("updated_at", ""),
             })
 
-    generated = sum(1 for item in blocks if item["kind"] not in {"original", "extracted"})
+    # summary_only 路径不物化 blocks，所以生成内容数要单独算，否则恒为 0。
+    generated = (
+        sum(_generated_block_counts(designs, runs, compositions or []).values())
+        if stats_only
+        else sum(1 for item in blocks if item["kind"] not in {"original", "extracted"})
+    )
     return {
         "stats": {
             "terms": len({item["academic_term"] for item in units}),
             "courses": len({item["archive_id"] for item in units}),
+            # 注意：units 是"每个课程档案一个合成单元"，不等于资料单元模块里的真实单元数。
+            # 真值由 material_units 提供，前端用 materialUnits.length 覆盖。
+            "course_units": len(units),
             "units": len(units), "materials": sum(len(item.get("materials", [])) for item in archives),
             "generated_blocks": generated,
         },

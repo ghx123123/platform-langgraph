@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from pathlib import Path
 
 from deepseek_harness import DeepSeekHarness
@@ -98,7 +99,13 @@ CORDIS = Path(
 )
 
 _bridge_lock = __import__("threading").Lock()
-STATE = {"harness": None, "provider": None, "model": None}
+# A DeepSeekHarness ``run(..., session_id=...)`` call creates a new live
+# Session wrapper on every invocation.  Reusing the same id with a fresh
+# wrapper causes the SDK to reject the request as an id collision while a
+# persisted log is already attached to another live session.  Keep the
+# wrapper alive for the lifetime of this bridge process instead.  This is a
+# runtime cache only; durable business state remains in the platform DB.
+STATE = {"harness": None, "provider": None, "model": None, "sessions": {}}
 
 
 def translate_error(text: str) -> str:
@@ -133,6 +140,7 @@ def ensure_harness(workdir: Path, session_root: Path, model: str) -> DeepSeekHar
             except Exception:
                 pass
             state["harness"] = None
+            state["sessions"] = {}
         api_key_env = (os.environ.get("MINIMAX_API_KEY") if provider == "minimax-cn" else os.environ.get("DEEPSEEK_API_KEY")) or ""
         log = logging.getLogger("dsh_bridge")
         log.info("rebuild harness provider=%s model=%s has_key=%s", provider, model_id, bool(api_key_env))
@@ -159,7 +167,47 @@ def ensure_harness(workdir: Path, session_root: Path, model: str) -> DeepSeekHar
         state["harness"] = harness
         state["provider"] = provider
         state["model"] = model_id
+        state["sessions"] = {}
         return harness
+
+
+def run_in_session(harness: DeepSeekHarness, session_id: str, prompt: str, on_notification=None):
+    """Run a prompt through one stable SDK Session instance.
+
+    ``DeepSeekHarness.start_session`` is intentionally called once per
+    explicit session id.  Subsequent turns invoke ``Session.run`` directly,
+    preserving the SDK's in-memory identity and conversation context.
+    """
+    sid = str(session_id or "").strip()
+    if not sid:
+        return harness.run(prompt, on_notification=on_notification)
+    sessions = STATE.setdefault("sessions", {})
+    session = sessions.get(sid)
+    if session is None:
+        session = harness.start_session(sid)
+        sessions[sid] = session
+    try:
+        result = session.run(prompt, on_notification=on_notification)
+        # The SDK reports provider/session failures as a RunResult with an
+        # ``error`` finish reason rather than raising.  Inspect the captured
+        # event payload so persisted-log collisions receive the same recovery
+        # treatment as raised exceptions.
+        event_text = " ".join(str(event) for event in (getattr(result, "events", None) or []))
+        if getattr(result, "finish_reason", None) != "error" or "id collision" not in event_text.lower():
+            return result
+    except Exception as exc:
+        if "id collision" not in str(exc).lower():
+            raise
+    # A process restart cannot attach a new live SDK Session to a log that is
+    # already persisted under the deterministic business id. Keep the
+    # business mapping stable, but mint a runtime-only id and retry once;
+    # existing logs are intentionally preserved.
+    runtime_sid = f"{sid}~runtime-{uuid.uuid4().hex[:10]}"
+    log = logging.getLogger("dsh_bridge")
+    log.warning("session collision for %s; retrying with runtime session %s", sid, runtime_sid)
+    session = harness.start_session(runtime_sid)
+    sessions[sid] = session
+    return session.run(prompt, on_notification=on_notification)
 
 
 def main() -> None:
@@ -254,7 +302,7 @@ def main() -> None:
                             "id": rid, "event": "request",
                             "provider": config.get("provider", ""), "model": config.get("model", ""),
                         }, ensure_ascii=False), flush=True)
-                result = harness.run(task_prompt, session_id=session_id or None, on_notification=_on_notification)
+                result = run_in_session(harness, session_id, task_prompt, on_notification=_on_notification)
                 final = result.final_response or ""
                 reason = result.finish_reason or ""
                 if reason == "error":
@@ -335,7 +383,7 @@ def main() -> None:
                                 "id": rid, "event": "phase", "phase": etype, "round": i,
                                 "turn": data.get("turn"), "step": data.get("step"),
                             }, ensure_ascii=False), flush=True)
-                    result = harness.run(task_prompt, session_id=session_id or None, on_notification=_round_on_notification)
+                    result = run_in_session(harness, session_id, task_prompt, on_notification=_round_on_notification)
                     last_final = result.final_response or ""
                     reason = result.finish_reason or ""
                     iterations_done = i

@@ -62,14 +62,15 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
   const nodes: FlowNode[] = useMemo(() => {
     const hasNodeProgress = events.some((event) => ['node.started', 'node.completed', 'review.completed'].includes(event.event_type));
     return AGENT_ROLE_DEFINITIONS.map((def, index) => {
-    const iteration = def.phase === 'teach_knowledge' || def.phase === 'student_question' || def.phase === 'teacher_answer'
+    const rolePhases = def.key === 'teach' ? ['teach_knowledge', 'teacher_answer'] : [def.phase];
+    const iteration = rolePhases.some((phase) => phase === 'teach_knowledge' || phase === 'student_question' || phase === 'teacher_answer')
       ? Number(run.teaching_data.current_iteration ?? 0)
       : 0;
-    const state: FlowNode['state'] = phaseDone(events, def.phase)
+    const state: FlowNode['state'] = rolePhases.some((phase) => phaseDone(events, phase))
       ? 'done'
-      : phaseRunning(events, def.phase, run) || (!hasNodeProgress && ['queued', 'running'].includes(run.status) && index === 0) ? 'running' : 'waiting';
+      : rolePhases.some((phase) => phaseRunning(events, phase, run)) || (!hasNodeProgress && ['queued', 'running'].includes(run.status) && index === 0) ? 'running' : 'waiting';
     // 该角色最近一条真实产出
-    const latestMsg = [...messages].reverse().find((m) => m.phase === def.phase);
+    const latestMsg = [...messages].reverse().find((m) => rolePhases.includes(m.phase));
       return { key: def.key, name: def.name, role: def.role, responsibility: def.responsibility, input: def.input, output: def.output, phase: def.phase, kind: def.kind, icon: def.icon, state, iteration, message: latestMsg?.content || '' };
     });
   }, [events, messages, run]);
@@ -84,7 +85,7 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
   }, [run.id, events.length]);
 
   // 节点 key → workflow phase 映射(node.token 事件的 node 字段用的是 phase)
-  const rolePhase = selectedNode?.phase;
+  const rolePhases = selectedNode?.key === 'teach' ? ['teach_knowledge', 'teacher_answer'] : selectedNode ? [selectedNode.phase] : [];
   // 真实 token 流: 从 events 提取 node.token(按 node 分组的累积文本), 供右侧 dsh 流展示"真实正在生成"
   const tokenTexts = useMemo(() => {
     const map: Record<string, string> = {};
@@ -96,14 +97,14 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
     });
     return map;
   }, [events]);
-  const liveTokenText = rolePhase ? tokenTexts[rolePhase] || '' : '';
+  const liveTokenText = rolePhases.map((phase) => tokenTexts[phase] || '').filter(Boolean).join('\n');
   const hasLiveToken = liveTokenText.length > 0;
   // A persisted terminal status is authoritative. Historical token events are
   // replayed as read-only content and must not make the panel look live.
   const isTerminalRun = ['completed', 'failed', 'cancelled'].includes(run.status);
   const shouldStream = !isTerminalRun && selectedNode?.state === 'running';
 
-  // dsh 生成过程: running 时用真实 node.token 流; 否则回退打字流(展示已有 message)
+  // dsh 生成过程只展示服务端真实 token/message，不再伪造打字流。
   useEffect(() => {
     setStreamDone(false);
     setStreaming(shouldStream);
@@ -116,33 +117,10 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
       setStreaming(shouldStream);
       return () => { if (streamTimer.current) clearInterval(streamTimer.current); };
     }
-    const text = (selectedNode?.message || `正在通过 dsh agent 处理「${selectedNode?.name || '当前'}」任务…`)
-      .replace(/<\\?[a-z/][^>]*>/gi, '');
-    if (!shouldStream) {
-      if (body) { body.textContent = text; body.scrollTop = body.scrollHeight; }
-      setStreaming(false);
-      setStreamDone(Boolean(selectedNode?.message) || selectedNode?.state === 'done' || isTerminalRun);
-      return () => { if (streamTimer.current) clearInterval(streamTimer.current); };
-    }
-    if (body) {
-      body.textContent = '';
-      let i = 0;
-      streamTimer.current = setInterval(() => {
-        if (i >= text.length) {
-          clearInterval(streamTimer.current);
-          streamTimer.current = undefined;
-          setStreaming(false);
-          setStreamDone(true);
-          if (body) body.textContent = text;
-          return;
-        }
-        i += 2;
-        if (body) {
-          body.textContent = text.slice(0, i);
-          body.scrollTop = body.scrollHeight;
-        }
-      }, 18);
-    }
+    const text = (selectedNode?.message || '').replace(/<\\?[a-z/][^>]*>/gi, '');
+    if (body) { body.textContent = text; body.scrollTop = body.scrollHeight; }
+    setStreaming(shouldStream && !text);
+    setStreamDone(Boolean(text) || selectedNode?.state === 'done' || isTerminalRun);
     return () => { if (streamTimer.current) clearInterval(streamTimer.current); };
   }, [selected, selectedNode?.message, selectedNode?.state, liveTokenText, hasLiveToken, shouldStream, isTerminalRun]);
 
@@ -152,16 +130,14 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
   // 画布布局锚点(与原型一致): 主线 y=204 水平 4 个 + 学生列 x=690 + 第二行 y=400
   const LAYOUT: Record<string, { x: number; y: number }> = {
     analysis: { x: 10, y: 48 }, design: { x: 200, y: 48 }, teach: { x: 390, y: 48 },
-    students: { x: 10, y: 205 }, answer: { x: 150, y: 205 },
-    supervisor: { x: 290, y: 205 }, finalize: { x: 430, y: 205 },
+    students: { x: 80, y: 205 }, supervisor: { x: 300, y: 205 }, finalize: { x: 470, y: 205 },
   };
   const EDGES: Array<{ from: string; cls: string; d: string }> = [
     { from: 'analysis', cls: '', d: 'M140 74 L200 74' },
     { from: 'design', cls: '', d: 'M330 74 L390 74' },
     { from: 'teach', cls: 'extra', d: 'M455 111 C455 150 75 150 75 205' },
-    { from: 'students', cls: '', d: 'M140 231 L150 231' },
-    { from: 'answer', cls: 'super', d: 'M280 231 L290 231' },
-    { from: 'supervisor', cls: '', d: 'M420 231 L430 231' },
+    { from: 'students', cls: 'super', d: 'M210 231 L300 231' },
+    { from: 'supervisor', cls: '', d: 'M440 231 L470 231' },
   ];
 
   return (
@@ -236,6 +212,15 @@ export function AgentFlowWorkspace({ run, events, messages }: AgentFlowWorkspace
           </div>
           </div>
         </div>
+
+        <section className="afw-activity" aria-label="DSH 实时输出">
+          <div className="afw-activity-head"><span><Radio size={13} />运行事件流</span><small>{events.length} 条服务端事件</small></div>
+          <div className="afw-activity-list">
+            {events.length === 0 ? <div className="afw-activity-empty">等待 DSH 返回首个事件…</div> : events.slice(-12).map((event) => (
+              <div className="afw-activity-row" key={`${event.sequence}-${event.event_type}`}><span className="afw-seq">#{event.sequence}</span><div><b>{event.node || 'runtime'}</b><span>{event.event_type}</span><p>{event.message || (event.payload?.text ? String(event.payload.text) : '事件已接收')}</p></div></div>
+            ))}
+          </div>
+        </section>
 
         {/* Linear fallback keeps the same event-backed states usable on touch
             screens where the spatial SVG cannot fit without horizontal scroll. */}

@@ -71,9 +71,40 @@ class WorkflowService:
             "document_text": request.document_text,
             "interventions": request.interventions.model_dump(),
             "scope": request.scope.model_dump(),
+            "workflow_version": request.workflow_version,
         })) or run
+        if request.workflow_version == "classroom_v2":
+            run = (await self.repository.update_run(run.id, status="running")) or run
+            await self._link_design_run(request.design_id, run.id)
+            await self._emit(run.id, "run.started", None, "开始准备 Lesson Blueprint", {"workflow_version": "classroom_v2"})
+            return run
         self._start(run, self._graph_input(run, request))
         return run
+
+    async def _link_design_run(self, design_id: str | None, run_id: str) -> None:
+        """把新建的会话回写到课程设计。
+
+        课程设计记录里的 run_id 决定了「成果中心 → 整体同步框架」能否通过同源校验
+        (course_designs.service.validate_run_context)。过去这条链路没人回写, 导致教师跑完
+        多智能体流程后同步成果始终 409。回写失败不阻断会话创建。
+        """
+        if not design_id:
+            return
+        try:
+            from backend.core.config import get_settings
+            from backend.course_designs import storage as design_storage
+
+            root = get_settings().course_design_store_path
+            record = await asyncio.to_thread(design_storage.load_design, root, design_id)
+            if record is None:
+                return
+            if record.get("run_id") == run_id:
+                return
+            record["run_id"] = run_id
+            record["updated_at"] = utc_now().isoformat()
+            await asyncio.to_thread(design_storage.save_design, root, record)
+        except Exception:
+            logger.exception("failed to link design %s to run %s", design_id, run_id)
 
     @staticmethod
     def _graph_input(run: RunRecord, request: CreateRunRequest) -> dict[str, Any]:

@@ -16,6 +16,21 @@ const STATUS_TEXT: Record<RunStatus, string> = {
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
+/** 运行中会话超过这个时长没有更新, 视为停滞(实测桥崩溃后 run 会永远停在 running)。 */
+const STALL_THRESHOLD_MS = 10 * 60 * 1000;
+
+/** 返回停滞描述(如「已 2 小时无进展」), 未停滞返回空串。 */
+function stalledLabel(run: WorkflowRun): string {
+  if (run.status !== 'running' && run.status !== 'queued') return '';
+  const ts = Date.parse(run.updated_at || run.created_at);
+  if (Number.isNaN(ts)) return '';
+  const idle = Date.now() - ts;
+  if (idle < STALL_THRESHOLD_MS) return '';
+  const minutes = Math.floor(idle / 60000);
+  const text = minutes >= 60 ? `${Math.floor(minutes / 60)} 小时` : `${minutes} 分钟`;
+  return `已 ${text}无进展`;
+}
+
 /** 格式化创建时间为紧凑的「M月D日 HH:mm」 */
 function formatTime(iso: string): string {
   const ts = Date.parse(iso);
@@ -43,6 +58,7 @@ export function SessionRunCard({ run, selected, onSelect, onDelete }: SessionRun
   const isPaused = run.status === 'paused';
   const isFailed = run.status === 'failed';
   const score = isCompleted ? run.review?.score : undefined;
+  const stalled = stalledLabel(run);
 
   const currentIteration =
     typeof run.teaching_data.current_iteration === 'number' ? run.teaching_data.current_iteration : 0;
@@ -86,23 +102,26 @@ export function SessionRunCard({ run, selected, onSelect, onDelete }: SessionRun
 
   return (
     <div
-      className={`session-card session-status-${run.status}${selected ? ' selected' : ''}${isFailed ? ' is-failed' : ''}`}
+      className={`session-card session-status-${run.status}${selected ? ' selected' : ''}${isFailed ? ' is-failed' : ''}${stalled ? ' is-stalled' : ''}`}
       onClick={handleSelect}
       onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
       aria-pressed={selected}
-      aria-label={`${run.objective}，${STATUS_TEXT[run.status]}${selected ? '，当前已选中' : ''}`}
-      title={isFailed && run.error ? run.error : undefined}
+      aria-label={`${run.objective}，${STATUS_TEXT[run.status]}${stalled ? `，${stalled}` : ''}${selected ? '，当前已选中' : ''}`}
+      title={isFailed && run.error ? run.error : stalled ? `${stalled}，可能已中断；可删除后重新启动` : undefined}
     >
       <span className="session-card-dot" aria-hidden="true" />
       <div className="session-card-main">
-        <strong className="session-card-title">{run.objective}</strong>
+        <strong className="session-card-title" title={run.objective}>{run.objective}</strong>
         <div className="session-card-meta">
           <Clock3 size={11} aria-hidden="true" />
           <span className="session-card-time">{formatTime(run.created_at)}</span>
-          <span className="session-card-status-text">{STATUS_TEXT[run.status]}</span>
-          {isFailed && <AlertTriangle size={11} aria-hidden="true" />}
+          {/* 窄卡片下状态文字会被省略号截断，title 保证完整文案仍可查看 */}
+          <span className="session-card-status-text" title={STATUS_TEXT[run.status]}>
+            {STATUS_TEXT[run.status]}
+          </span>
+          {(isFailed || stalled) && <AlertTriangle size={11} aria-hidden="true" />}
         </div>
       </div>
       <div className="session-card-side">
@@ -116,6 +135,7 @@ export function SessionRunCard({ run, selected, onSelect, onDelete }: SessionRun
           <span className="session-card-round">{roundText}</span>
         )}
         {isPaused && <span className="session-card-attention">待你处理</span>}
+        {stalled && <span className="session-card-stalled" title="超过 10 分钟没有新进展，可能已中断">{stalled}</span>}
         {confirming ? (
           <span className="session-card-confirm" onClick={(e) => e.stopPropagation()}>
             <button type="button" className="session-card-confirm-danger" onClick={handleConfirmDelete}>

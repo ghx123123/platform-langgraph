@@ -155,13 +155,16 @@ def test_knowledge_outline_drives_course_design_fields_and_lineage() -> None:
 
 
 def test_knowledge_outline_does_not_invent_unmarked_difficult_points() -> None:
+    """大纲节点没标难点时, 不得凭空造难点; 但也不能留空 —— 退回知识点本身。"""
     outline = knowledge_outline()
     for node in outline["knowledge_nodes"]:
         node["is_difficult_point"] = False
 
     record = create_design(archive_record(), outline_payload(), outline)
 
-    assert record["content"]["difficult_points"] == []
+    difficult = record["content"]["difficult_points"]
+    assert difficult, "教学难点不应为空(导出 Word 会留白)"
+    assert set(difficult) <= set(record["content"]["knowledge_points"])
 
 
 def test_current_material_unit_nodes_are_mapped_into_course_design() -> None:
@@ -442,7 +445,7 @@ def test_source_docx_template_is_filled(tmp_path: Path) -> None:
     data, mode = build_docx(create_record(), template_path)
     result = Document(BytesIO(data))
     assert mode == "source-template"
-    assert "准确说明" in result.tables[0].cell(0, 1).text
+    assert "能说出" in result.tables[0].cell(0, 1).text
     assert "传感器的定义" in result.tables[0].cell(1, 1).text
 
 
@@ -499,7 +502,7 @@ def test_template_labels_do_not_match_guidance_or_similar_words(tmp_path: Path) 
 
     assert mode == "source-template"
     assert rendered.cell(0, 1).text == "2026年春季"
-    assert "准确说明" in rendered.cell(1, 1).text
+    assert "能说出" in rendered.cell(1, 1).text
     assert rendered.cell(2, 1).text == "说明文字"
 
 
@@ -948,3 +951,117 @@ def test_assembly_sources_api_restores_legacy_outline(monkeypatch, tmp_path: Pat
     assert response.status_code == 200
     kinds = {item["kind"] for item in response.json()["items"]}
     assert {"schedule", "syllabus", "knowledge_outline"} <= kinds
+
+
+def test_workflow_create_run_links_design_run_id(monkeypatch, tmp_path: Path) -> None:
+    """B1: 新建会话时必须把 run_id 回写到课程设计, 否则成果同步永远 409。"""
+    import asyncio
+
+    from backend.core.config import get_settings
+    from backend.workflows import service as workflow_service_module
+
+    record = create_record()
+    root = tmp_path / "course_designs"
+    save_design(root, record)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "course_design_store_path", root)
+
+    service = workflow_service_module.WorkflowService.__new__(workflow_service_module.WorkflowService)
+    asyncio.run(service._link_design_run(record["id"], "run-abc"))
+    assert load_design(root, record["id"])["run_id"] == "run-abc"
+
+    # 缺少 design_id 时静默跳过, 不抛错
+    asyncio.run(service._link_design_run(None, "run-def"))
+
+
+def test_sync_run_accepts_legacy_run_without_design_id() -> None:
+    """B1 兜底: 历史 run 的 teaching_data 没有 design_id, 但 archive+主文档同源仍可同步。"""
+    record = create_record()
+    run = {
+        "id": "run-legacy",
+        "status": "completed",
+        "teaching_data": {
+            "archive_id": record["archive_id"],
+            "document_id": record["source_references"][0]["document_id"],
+        },
+        "review": {"score": 80},
+    }
+    updated = sync_run(record, run, None)
+    assert updated["run_id"] == "run-legacy"
+
+
+def test_requirement_text_is_condensed_for_key_and_difficult_points() -> None:
+    """C1: 大纲要求原文是整段时, 重点/难点字段必须是一行可读短句。"""
+    outline = knowledge_outline()
+    long_text = "Python开发环境搭建与使用 教学内容: Python语言简介 Python版本简介 python编程规范与代码优化建议 " * 4
+    outline["requirements"] = [{"category": "difficult_point", "content": long_text}]
+    for node in outline["knowledge_nodes"]:
+        node["is_key_point"] = False
+        node["is_difficult_point"] = False
+
+    record = create_design(archive_record(), outline_payload(), outline)
+
+    difficult = record["content"]["difficult_points"]
+    assert difficult, "难点不应为空"
+    assert all(len(item) <= 41 for item in difficult), difficult
+    # 完整原文仍然保留在快照里, 不丢信息
+    assert record["source_snapshot"]["syllabus_requirements"][0]["content"] == long_text
+
+
+def test_key_points_fall_back_to_knowledge_points_when_outline_unmarked() -> None:
+    """C1: 大纲节点全未标重点时, 教学重点退回知识点, 不能留空。"""
+    outline = knowledge_outline()
+    for node in outline["knowledge_nodes"]:
+        node["is_key_point"] = False
+    outline["requirements"] = []
+
+    record = create_design(archive_record(), outline_payload(), outline)
+
+    key_points = record["content"]["key_points"]
+    assert key_points, "教学重点不应为空"
+    assert all(item in record["content"]["knowledge_points"] or "传感器" in item for item in key_points)
+
+
+def test_objectives_reference_knowledge_points_not_outline_title() -> None:
+    """C2: 兜底目标句必须引用知识点, 不能把大纲标题当知识点讲。"""
+    outline = knowledge_outline()
+    outline["requirements"] = []
+
+    record = create_design(archive_record(), outline_payload(), outline)
+
+    objectives = record["content"]["objectives"]
+    assert objectives
+    assert all("传感器基础知识大纲" not in item for item in objectives), objectives
+    assert any("传感器的定义" in item for item in objectives), objectives
+
+
+def test_template_inspection_reports_pending_fields(monkeypatch, tmp_path: Path) -> None:
+    """C3: 导出前必须告诉教师哪些字段还是空白(Word 里会写成「待教师完善」)。"""
+    root = tmp_path / "course_designs"
+    record = create_record()
+    record["content"]["key_points"] = []
+    record["content"]["postscript"] = ""
+    save_design(root, record)
+
+    app = FastAPI()
+    app.include_router(course_design_router.router)
+    monkeypatch.setattr(course_design_router.get_settings(), "course_design_store_path", root)
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/course-designs/{record['id']}/template-inspection", json={})
+
+    assert response.status_code == 200
+    pending = response.json()["pending_fields"]
+    assert "教学重点" in pending
+    assert "教学后记" in pending
+    assert "教学目标" not in pending
+
+
+def test_classroom_finalize_writes_consistent_review_score() -> None:
+    """D1: 会话卡(run.review.score)与复盘页(supervisor report)必须是同一个分数。"""
+    import re
+    source = (Path(__file__).resolve().parents[1] / "backend" / "classroom" / "integration.py").read_text(encoding="utf-8")
+    block = source.split("final_output = (", 1)[1].split("return", 1)[0]
+    assert '"score": report.overall_score' in block, "定稿时必须把督导分数写回 run.review.score"
+    assert 'review=review_payload' in block
+    assert "report.model_dump(mode=\"json\")" not in block, "不能把督导报告原样写进 run.review(字段名不同)"

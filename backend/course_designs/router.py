@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
@@ -19,7 +19,8 @@ from backend.course_designs.models import (
 from backend.course_designs.service import (
     apply_assembly, assembly_sources, build_docx, create_design, inspect_docx_template,
     CrossArchiveReferenceError, public_record, rebind_design, reference_detail, restore_source_snapshot, summary, sync_run,
-    update_design, utc_now, validate_run_context,
+    update_design, utc_now, validate_run_context, _pending_content_fields,
+    review_blockers,
 )
 from backend.course_designs.storage import delete_design, list_designs, load_design, save_design
 from backend.documents.storage import delete_document, original_path, persist_original
@@ -260,6 +261,15 @@ async def update(design_id: str, payload: CourseDesignUpdate) -> CourseDesignRec
         record = await run_in_threadpool(load_design, get_settings().course_design_store_path, design_id)
         if payload.base_version != record.get("version", 1):
             raise HTTPException(status_code=409, detail="课程设计已被更新，请刷新后再保存")
+        # 「教师已审核」是一个有内容的承诺：没有教学目标/知识点/教学过程就退回 draft 才能
+        # 说得通。过去这个开关不做任何校验，点一下数字就变，等于没有意义。
+        if payload.status == "reviewed":
+            blockers = review_blockers(payload.content)
+            if blockers:
+                raise HTTPException(
+                    status_code=422,
+                    detail="教案还缺少以下内容，补齐后才能标记为已审核：" + "、".join(blockers),
+                )
         updated = await run_in_threadpool(
             update_design,
             record,
@@ -302,19 +312,91 @@ async def bind_run(design_id: str, run_id: str, request: Request) -> CourseDesig
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-async def _assembly_context(record: dict, run_id: str | None, request: Request) -> tuple[str | None, dict | None, str | None]:
+class _AssemblyContext:
+    """内容编排需要的全部上下文。
+
+    用对象而不是元组：课堂来源需要额外的 classroom 载荷，元组再加字段会让每个
+    调用点都得记住位置。
+    """
+
+    __slots__ = ("run_id", "run", "draft", "classroom", "warning")
+
+    def __init__(self, run_id=None, run=None, draft=None, classroom=None, warning=None):
+        self.run_id = run_id
+        self.run = run
+        self.draft = draft
+        self.classroom = classroom
+        self.warning = warning
+
+
+async def _classroom_payload(request: Request, run_id: str) -> tuple[dict | None, str | None]:
+    """读取一次课堂演练产物；读不到不是错误，只是少两类来源。"""
+    repository = getattr(request.app.state, "classroom_repository", None)
+    if repository is None:
+        return None, "未连接到课堂演练数据库，逐页讲稿与督导评价暂不可用"
+    try:
+        lessons = await repository.list_lesson_versions(run_id)
+        rounds = await repository.list_simulation_rounds(run_id)
+    except Exception:
+        return None, "课堂演练数据读取失败，逐页讲稿与督导评价暂不可用"
+    if not lessons and not rounds:
+        return None, None
+    published = [item for item in lessons if item.status in ("ready", "final")]
+    report = None
+    for round_item in reversed(rounds):
+        try:
+            found = await repository.get_supervisor_report(round_item.id)
+        except Exception:
+            found = None
+        if found is not None:
+            report = found.model_dump(mode="json")
+            break
+    # 返回 {run_id: info} 映射，与 build_results 的 classroom 参数保持同一形状；
+    # 单一载荷会被 _classroom_sources 当成"每个 key 是一个 run"而空转。
+    return {
+        run_id: {
+            "run_id": run_id,
+            "title": "",
+            "lessons": [item.model_dump(mode="json") for item in (published or lessons)],
+            "report": report,
+        }
+    }, None
+
+
+async def _assembly_context(record: dict, run_id: str | None, request: Request) -> _AssemblyContext:
+    # 语义区分（前端据此表达「仅使用进度表、大纲和知识范围」）：
+    #   run_id == ""  → 教师显式不使用任何会话，直接返回空上下文，不回退 design.run_id；
+    #   run_id is None → 未指定，回退到课程设计已绑定的 run_id；
+    #   其他            → 使用显式指定的会话。
+    if run_id == "":
+        return _AssemblyContext()
     selected_run_id = run_id or record.get("run_id")
     if not selected_run_id:
-        return None, None, None
+        return _AssemblyContext()
     run = await request.app.state.workflow_service.get_run(selected_run_id)
+
+    # 课堂演练的产出（逐页讲稿/督导评价）在 run 还是 paused 的时候就已经存在了，
+    # 而教师想把它插进教案的时机往往正是那一刻。旧的 "必须 completed" 门把这一段
+    # 直接挡在门外。改为：不完全依赖 run 状态的课堂产物始终可读；
+    # 依赖 run.teaching_data 的来源（教师消息/思政）仍要求 completed。
+    classroom, warning = await _classroom_payload(request, selected_run_id)
     if run.status != "completed":
+        if classroom is not None:
+            return _AssemblyContext(run_id=selected_run_id, classroom=classroom, warning=warning)
         if run_id is None:
-            return None, None, None
+            return _AssemblyContext()
         raise HTTPException(status_code=409, detail="所选会话尚未完成，暂时没有可插入成果")
+
     run_data = run.model_dump(mode="json")
     validate_run_context(record, run_data)
     draft = await request.app.state.workflow_service.repository.get_teacher_draft(selected_run_id)
-    return selected_run_id, run_data, draft.content if draft else None
+    if classroom is not None:
+        classroom["title"] = run_data.get("objective") or ""
+    return _AssemblyContext(
+        run_id=selected_run_id, run=run_data,
+        draft=draft.content if draft else None,
+        classroom=classroom, warning=warning,
+    )
 
 
 async def _restore_assembly_snapshot(record: dict) -> dict:
@@ -331,14 +413,23 @@ async def _restore_assembly_snapshot(record: dict) -> dict:
 
 @router.get("/{design_id}/assembly-sources", response_model=CourseDesignAssemblySourceList)
 async def get_assembly_sources(
-    design_id: str, request: Request, run_id: str | None = None,
+    design_id: str,
+    request: Request,
+    run_id: str | None = Query(
+        default=None,
+        description="省略=回退课程设计已绑定会话；空串=显式不使用任何会话；其他=指定会话",
+    ),
 ) -> CourseDesignAssemblySourceList:
     try:
         record = await run_in_threadpool(load_design, get_settings().course_design_store_path, design_id)
         record = await _restore_assembly_snapshot(record)
-        selected_run_id, run_data, teacher_draft = await _assembly_context(record, run_id, request)
-        items = await run_in_threadpool(assembly_sources, record, run_data, teacher_draft)
-        return CourseDesignAssemblySourceList(design_id=design_id, run_id=selected_run_id, items=items)
+        ctx = await _assembly_context(record, run_id, request)
+        items = await run_in_threadpool(
+            assembly_sources, record, ctx.run, ctx.draft, ctx.classroom
+        )
+        return CourseDesignAssemblySourceList(
+            design_id=design_id, run_id=ctx.run_id, items=items, warning=ctx.warning,
+        )
     except HTTPException:
         raise
     except FileNotFoundError as exc:
@@ -349,22 +440,33 @@ async def get_assembly_sources(
 
 @router.post("/{design_id}/assembly/apply", response_model=CourseDesignRecord)
 async def assemble_design(
-    design_id: str, payload: CourseDesignAssemblyApply, request: Request,
-    run_id: str | None = None,
+    design_id: str,
+    payload: CourseDesignAssemblyApply,
+    request: Request,
+    run_id: str | None = Query(
+        default=None,
+        description="省略=回退课程设计已绑定会话；空串=显式不使用任何会话；其他=指定会话",
+    ),
 ) -> CourseDesignRecord:
     try:
         record = await run_in_threadpool(load_design, get_settings().course_design_store_path, design_id)
         record = await _restore_assembly_snapshot(record)
         if payload.base_version != record.get("version", 1):
             raise HTTPException(status_code=409, detail="课程设计已被更新，请刷新后重新插入")
-        selected_run_id, run_data, teacher_draft = await _assembly_context(record, run_id, request)
-        available = await run_in_threadpool(assembly_sources, record, run_data, teacher_draft)
+        ctx = await _assembly_context(record, run_id, request)
+        available = await run_in_threadpool(
+            assembly_sources, record, ctx.run, ctx.draft, ctx.classroom
+        )
         updated = await run_in_threadpool(apply_assembly, record, payload, available)
-        if selected_run_id and any(
-            item.startswith(("teacher-message:", "teacher-draft:", "ideological:"))
+        # 只要插入了来自该会话的内容就建立绑定；课堂来源同样属于这个会话。
+        if ctx.run_id and any(
+            item.startswith((
+                "teacher-message:", "teacher-draft:", "ideological:",
+                "lesson:", "supervisor:",
+            ))
             for item in payload.source_ids
         ):
-            updated["run_id"] = selected_run_id
+            updated["run_id"] = ctx.run_id
         await run_in_threadpool(save_design, get_settings().course_design_store_path, updated)
         return CourseDesignRecord.model_validate(public_record(updated))
     except HTTPException:
@@ -394,15 +496,13 @@ async def source(design_id: str, reference_id: str) -> CourseReferenceDetail:
 async def inspect_template(design_id: str, payload: CourseDesignExportRequest) -> CourseDesignTemplateInspection:
     try:
         record = await run_in_threadpool(load_design, get_settings().course_design_store_path, design_id)
+        content = CourseDesignRecord.model_validate(public_record(record)).content
         template_path, _, _, _ = await _resolve_template(record, payload)
         report = (
-            await run_in_threadpool(
-                inspect_docx_template,
-                template_path,
-                CourseDesignRecord.model_validate(public_record(record)).content,
-            )
+            await run_in_threadpool(inspect_docx_template, template_path, content)
             if template_path else _standard_template_inspection()
         )
+        report = {**report, "pending_fields": _pending_content_fields(content)}
         return CourseDesignTemplateInspection.model_validate(report)
     except FileNotFoundError as exc:
         raise _not_found(exc) from exc
@@ -461,6 +561,10 @@ async def export_docx(design_id: str, payload: CourseDesignExportRequest) -> Res
         expired_exports = all_exports[:-30]
         record["exports"] = all_exports[-30:]
         record["updated_at"] = created_at
+        # 导出成功 = 教师认可这一版，自动落到「教师已审核」。
+        # 这给了 status 一个真实含义：它表示"当前内容已经过教师确认并交付过"，
+        # 而不是一个需要教师额外去点、点了也不影响任何行为的开关。
+        record["status"] = "reviewed"
         try:
             await run_in_threadpool(save_design, settings.course_design_store_path, record)
         except Exception:

@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,8 @@ logger = logging.getLogger("multi_agent_platform.dsh_engine")
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _BRIDGE_SCRIPT = _PROJECT_ROOT / "scripts" / "dsh_agent_bridge.py"
 _VENV_PYTHON = Path(os.environ.get("DSH_ENGINE_PYTHON", str(_PROJECT_ROOT / "dev-venv-dshsdk" / "Scripts" / "python.exe")))
+# 桥的最终结果是一整行 JSON, 必须放得下长蓝图(见 _spawn 注释)。
+_STDOUT_LINE_LIMIT = 4 * 1024 * 1024
 
 
 class DshEngineError(RuntimeError):
@@ -43,12 +46,15 @@ class DshAgentEngine:
         default_model: str = "minimax-m3",
         api_key: str | None = None,
         base_url: str | None = None,
+        request_timeout: float | None = None,
     ) -> None:
         self._session_root = session_root or (_PROJECT_ROOT / ".runtime" / "dsh-sessions")
         self._cwd = cwd or (_PROJECT_ROOT / ".runtime" / "dsh-workspace")
         self._default_model = default_model
         self._api_key = api_key or ""
         self._base_url = base_url or ""
+        # 单次请求超时: 长蓝图(45 页)实测需要 6 分钟以上, 300s 会误杀。
+        self._request_timeout = float(request_timeout or 300.0)
         self._proc: asyncio.subprocess.Process | None = None
         self._pending: dict[int, asyncio.Future[dict]] = {}
         self._streams: dict[int, asyncio.Queue] = {}
@@ -57,6 +63,11 @@ class DshAgentEngine:
         self._stderr_task: asyncio.Task | None = None
         self._stderr_lines: list[str] = []
         self._lock = asyncio.Lock()
+        # 桥健康标记: stdout reader 一旦退出(崩溃/EOF), 桥就不能再收发请求 —— 必须重启,
+        # 否则后续每个请求都会白等到 timeout(实测崩溃后第二次重试等满 300s 且零输出)。
+        self._healthy = True
+        self._reader_error: str | None = None
+        self._restarts: list[float] = []
         # 常驻独立 Proactor loop 线程: 桥的所有 subprocess + I/O 都在它上面跑, 与主 loop 无关。
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -97,11 +108,62 @@ class DshAgentEngine:
 
     async def _ensure_started_internal(self) -> None:
         async with self._lock:
-            if self._proc is not None and self._proc.returncode is None:
+            if self._proc is not None and self._proc.returncode is None and self._healthy:
                 return
+            if not self._healthy:
+                # reader 已死: 先收尸再重启, 否则新请求会挂在一个收不到回复的进程上。
+                await self._teardown_locked("stdout reader 已退出")
+                self._check_restart_budget()
             self._proc = await self._spawn()
+            self._healthy = True
+            self._reader_error = None
             self._stdout_task = asyncio.create_task(self._read_stdout())
             self._stderr_task = asyncio.create_task(self._read_stderr())
+
+    def _check_restart_budget(self) -> None:
+        """限流: 一分钟内重启超过 3 次说明桥起不来, 直接报错而不是无限重启。"""
+        now = time.monotonic()
+        self._restarts = [item for item in self._restarts if now - item < 60.0]
+        if len(self._restarts) >= 3:
+            raise DshEngineError(
+                "dsh bridge 反复重启失败(60 秒内 3 次), 请检查桥日志或重启后端: "
+                + (self._reader_error or "unknown")
+            )
+        self._restarts.append(now)
+
+    async def _teardown_locked(self, reason: str) -> None:
+        """关掉不健康的桥(调用方必须已持有 self._lock)。"""
+        proc = self._proc
+        self._proc = None
+        for task in (self._stdout_task, self._stderr_task):
+            if task is not None and not task.done():
+                task.cancel()
+        self._stdout_task = None
+        self._stderr_task = None
+        if proc is not None:
+            try:
+                if proc.returncode is None:
+                    proc.kill()
+            except ProcessLookupError:
+                pass
+            logger.warning("dsh bridge torn down: %s (rc=%s)", reason, proc.returncode)
+
+    async def _mark_unhealthy(self, reason: str) -> None:
+        """reader 退出时调用: 标记不健康, 并让在途请求立刻失败(而不是等满 timeout)。"""
+        self._healthy = False
+        self._reader_error = reason
+        error = f"dsh bridge stdout reader exited: {reason}"
+        for rid, fut in list(self._pending.items()):
+            self._pending.pop(rid, None)
+            if not fut.done():
+                fut.set_exception(DshEngineError(error))
+        # 通知流式接收方, 避免 async generator 永远等哨兵
+        for key, (queue, main_loop) in list(self._streams.items()):
+            if isinstance(key, int):
+                try:
+                    main_loop.call_soon_threadsafe(queue.put_nowait, {"event": "error", "error": error})
+                except RuntimeError:
+                    pass
 
     async def _spawn(self) -> asyncio.subprocess.Process:
         env = os.environ.copy()
@@ -118,6 +180,9 @@ class DshAgentEngine:
             "PYTHONUTF8": "1",
         })
         # 桥进程从项目 cwd 启动(它用相对路径解析 cordis / node)
+        # limit: 桥把最终结果整行 JSON 打印, 长蓝图(45 页 ≈ 48KB 文本, 转义后更大)会超过
+        # asyncio 默认 64KiB 读行上限 → LimitOverrunError 会让 stdout reader 静默退出,
+        # 请求随后等满 300s 超时。这里放大到 4MiB。
         return await asyncio.create_subprocess_exec(
             str(_VENV_PYTHON),
             "-X", "utf8",
@@ -127,17 +192,27 @@ class DshAgentEngine:
             stderr=asyncio.subprocess.PIPE,
             cwd=str(_PROJECT_ROOT),
             env=env,
+            limit=_STDOUT_LINE_LIMIT,
         )
 
     async def _read_stdout(self) -> None:
         proc = self._proc
         if proc is None or proc.stdout is None:
             return
+        exit_reason = "EOF"
         try:
             while True:
-                line = await proc.stdout.readline()
+                try:
+                    line = await proc.stdout.readline()
+                except (asyncio.LimitOverrunError, ValueError) as exc:
+                    # 单行超过 limit: 旧实现会静默退出, 请求白等 300s。这里明确标记不健康,
+                    # 让 _ensure_started_internal 重建桥, 并让在途请求立即失败。
+                    exit_reason = f"readline limit exceeded: {exc}"
+                    logger.error("dsh bridge stdout line too long: %s", exc)
+                    break
                 if not line:
-                    return
+                    exit_reason = "stdout EOF"
+                    break
                 text = line.decode("utf-8", errors="replace").strip()
                 if not text:
                     continue
@@ -160,9 +235,15 @@ class DshAgentEngine:
                 if fut is not None and not fut.done():
                     fut.set_result(msg)
         except asyncio.CancelledError:
-            pass
-        except Exception:
+            exit_reason = "cancelled"
+            raise
+        except Exception as exc:
+            exit_reason = f"{type(exc).__name__}: {exc}"
             logger.exception("dsh bridge stdout reader crashed")
+        finally:
+            # 正常 EOF / 崩溃 / 超限都意味着这个桥不能再用了: 标记不健康, 下次请求前重建。
+            if not self._healthy or exit_reason not in ("cancelled",):
+                await self._mark_unhealthy(exit_reason)
 
     async def _read_stderr(self) -> None:
         proc = self._proc
@@ -185,6 +266,9 @@ class DshAgentEngine:
         proc = self._proc
         if proc is None or proc.stdin is None or proc.returncode is not None:
             raise DshEngineError(f"dsh bridge not running (rc={proc.returncode if proc else 'none'})")
+        if not self._healthy:
+            # ensure_started 之后仍不健康 = 刚刚重建又挂了, 立刻报错别浪费 timeout
+            raise DshEngineError(f"dsh bridge unhealthy: {self._reader_error or 'unknown'}")
         if rid is None:
             rid = self._next_id
             self._next_id += 1
@@ -215,7 +299,14 @@ class DshAgentEngine:
     def _stderr_tail(self) -> str:
         return "\n".join(self._stderr_lines[-15:])
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str, model: str | None = None):
+    async def generate_stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        session_id: str | None = None,
+        timeout: float | None = None,
+    ):
         """dsh 流式生成: async generator, 逐 chunk yield {"event":"chunk","text"} / {"event":"phase"}。
 
         桥端 stream:true 时 on_notification 把 text-delta 实时打 stdio(每行JSON);
@@ -231,7 +322,9 @@ class DshAgentEngine:
         async def _runner() -> str:
             """独立 loop 上执行真实请求(内部 _send 也是那个 loop 的协程)。"""
             try:
-                result = await self._generate_stream_request(system_prompt, user_prompt, model, user_id)
+                result = await self._generate_stream_request(
+                    system_prompt, user_prompt, model, user_id, session_id, timeout
+                )
                 try:
                     asyncio.run_coroutine_threadsafe(queue.put({
                         "event": "done",
@@ -268,6 +361,8 @@ class DshAgentEngine:
 
     async def _generate_stream_request(
         self, system_prompt: str, user_prompt: str, model: str | None, stream_key,
+        session_id: str | None = None,
+        timeout: float | None = None,
     ) -> dict:
         """在独立 loop 上跑: 预注册数字 rid→(queue,main_loop) 以便 _read_stdout 投递 chunk; _send 发请求."""
         # 先领取 rid(与 _send 内一致的自增逻辑), 预注册 flow
@@ -281,11 +376,11 @@ class DshAgentEngine:
                 "params": {
                     "system_prompt": system_prompt,
                     "user_prompt": user_prompt,
-                    "session_id": str(uuid.uuid4()),
+                    "session_id": session_id or str(uuid.uuid4()),
                     "model": model or self._default_model,
                     "stream": True,
                 },
-            }, rid=rid)
+            }, rid=rid, timeout=timeout or self._request_timeout)
             return msg
         finally:
             self._streams.pop(rid, None)
@@ -294,13 +389,40 @@ class DshAgentEngine:
         """一次智能体调用: 返回最终响应文本。模型不同时桥会重建 harness(换 provider/model)。"""
         return await self._run_on_loop(self._generate_internal(system_prompt, user_prompt, model), timeout=300)
 
-    async def _generate_internal(self, system_prompt: str, user_prompt: str, model: str | None) -> str:
+    async def generate_in_session(
+        self,
+        session_id: str,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        timeout: float = 300.0,
+    ) -> str:
+        """Generate using an explicit, caller-owned DSH session identity.
+
+        The legacy :meth:`generate` API remains ephemeral.  This method only
+        changes session selection; prompt construction and classroom policy
+        stay outside the engine.
+        """
+        if not str(session_id).strip():
+            raise ValueError("session_id must not be empty")
+        return await self._run_on_loop(
+            self._generate_internal(system_prompt, user_prompt, model, str(session_id).strip()),
+            timeout=timeout,
+        )
+
+    async def _generate_internal(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None,
+        session_id: str | None = None,
+    ) -> str:
         msg = await self._send({
             "method": "generate",
             "params": {
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
-                "session_id": str(uuid.uuid4()),
+                "session_id": session_id or str(uuid.uuid4()),
                 "model": model or self._default_model,
             },
         })
@@ -311,6 +433,21 @@ class DshAgentEngine:
             raw = msg.get("error") or self._stderr_tail() or "dsh agent finished with error"
             raise DshEngineError(str(raw).strip())
         return str(msg.get("final_response") or "")
+
+    async def generate_stream_in_session(
+        self,
+        session_id: str,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+    ):
+        """Streaming counterpart of :meth:`generate_in_session`."""
+        if not str(session_id).strip():
+            raise ValueError("session_id must not be empty")
+        async for item in self.generate_stream(
+            system_prompt, user_prompt, model=model, session_id=str(session_id).strip()
+        ):
+            yield item
 
     async def agent_run(
         self,

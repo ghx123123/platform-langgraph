@@ -1,0 +1,68 @@
+.classroom-chat{display:grid;grid-template-rows:auto minmax(260px,1fr) auto;min-width:0;overflow:hidden;border:1px solid #d8e1ea;border-radius:8px;background:#f3f6f9;box-shadow:0 6px 18px rgba(25,45,70,.07)}
+.classroom-chat-head{display:flex;min-width:0;align-items:center;gap:16px;padding:10px 12px;border-bottom:1px solid #dde5ed;background:#fff}
+.classroom-chat-title{display:flex;flex:none;align-items:center;gap:8px;color:#263b57}.classroom-chat-title>div{display:grid;gap:1px}.classroom-chat-title strong{font-size:13px}.classroom-chat-title span{color:#7b8999;font-size:10px}
+.classroom-chat-members{display:flex;min-width:0;align-items:center;gap:9px;margin-left:auto;overflow-x:auto;scrollbar-width:none}.classroom-chat-members::-webkit-scrollbar{display:none}
+.classroom-chat-member{display:inline-flex;flex:none;align-items:center;gap:5px;color:#52647a;font-size:10px;white-space:nowrap}.classroom-chat-member b,.classroom-chat-avatar{display:grid;place-items:center;border-radius:50%;color:#fff;font-weight:800;box-shadow:0 1px 3px rgba(24,44,68,.16)}
+.classroom-chat-member b{width:24px;height:24px;border:2px solid transparent;font-size: 10px}.classroom-chat-member.active b{border-color:#fff;outline:2px solid #38a169}.classroom-chat-member.teacher b,.classroom-chat-avatar.teacher{background:#2f6fba}.classroom-chat-member.student-high b,.classroom-chat-avatar.student-high{background:#298579}.classroom-chat-member.student-medium b,.classroom-chat-avatar.student-medium{background:#bd6b2d}.classroom-chat-member.student-low b,.classroom-chat-avatar.student-low{background:#b54e61}.classroom-chat-member.supervisor b{background:#596575}.classroom-chat-member.supervisor svg{color:#79889a}
+.classroom-chat-log{display:flex;min-width:0;max-height:420px;min-height:260px;flex-direction:column;gap:11px;overflow-x:hidden;overflow-y:auto;padding:14px;scroll-behavior:smooth;overscroll-behavior:contain}
+.classroom-chat-message{display:flex;width:100%;min-width:0;align-items:flex-start;gap:8px;animation:classroom-chat-enter .18s ease-out both}.classroom-chat-message.user{flex-direction:row-reverse}.classroom-chat-avatar{width:32px;height:32px;flex:0 0 32px;font-size:11px}.classroom-chat-avatar.user{background:#624b8e}
+.classroom-chat-body{display:flex;min-width:0;max-width:min(78%,760px);flex-direction:column;align-items:flex-start}.classroom-chat-message.user .classroom-chat-body{align-items:flex-end}.classroom-chat-meta{display:flex;max-width:100%;align-items:center;gap:7px;margin:0 2px 4px}.classroom-chat-meta strong{overflow:hidden;color:#263548;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.classroom-chat-meta>span{padding:2px 6px;border-radius:4px;background:#e5edf6;color:#526a83;font-size: 10px;font-weight:700}.classroom-chat-message[class*="student-"] .classroom-chat-meta>span{background:#f7eadf;color:#8e5124}.classroom-chat-message.user .classroom-chat-meta>span{background:#ede7f6;color:#654a8e}.classroom-chat-meta time{color:#8795a6;font-size: 10px;font-variant-numeric:tabular-nums}
+.classroom-chat-bubble{width:100%;min-width:120px;padding:9px 11px;border:1px solid #d8e1ea;border-radius:3px 8px 8px;background:#fff;color:#34465e;box-shadow:0 2px 7px rgba(29,52,77,.05)}.classroom-chat-message.teacher .classroom-chat-bubble{border-color:#c8dcef;background:#edf5fd}.classroom-chat-message.student-high .classroom-chat-bubble{border-left:3px solid #57a89f}.classroom-chat-message.student-medium .classroom-chat-bubble{border-left:3px solid #d79660}.classroom-chat-message.student-low .classroom-chat-bubble{border-left:3px solid #cb7a88}.classroom-chat-message.user .classroom-chat-bubble{border-color:#293b55;border-radius:8px 3px 8px 8px;background:#263b57;color:#fff}.classroom-chat-bubble p{margin:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+.classroom-chat-reply{display:block;width:100%;min-width:0;margin:0 0 7px;padding:5px 7px;border:0;border-left:2px solid #7da5ca;border-radius:0 4px 4px 0;background:rgba(255,255,255,.7);color:#61758d;text-align:left;cursor:pointer}.classroom-chat-reply strong{display:block;margin-bottom:1px;color:#405b79;font-size: 10px}.classroom-chat-reply span{display:block;overflow:hidden;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.classroom-chat-message.user .classroom-chat-reply{border-left-color:#bda9dc;background:rgba(255,255,255,.09);color:#d8e0ec}.classroom-chat-message.user .classroom-chat-reply strong{color:#efeafd}.classroom-chat-message.highlighted .classroom-chat-bubble{outline:2px solid rgba(47,111,186,.48);outline-offset:2px}
+.classroom-chat-system{display:flex;justify-content:center;padding:1px 0}.classroom-chat-system>span{max-width:92%;padding:4px 10px;border:1px solid #d6dee7;border-radius:999px;background:#e9eef3;color:#64758a;font-size:10px;line-height:1.45;text-align:center}.classroom-chat-system time{margin-right:6px;color:#8794a4;font-variant-numeric:tabular-nums}
+.classroom-chat-empty{display:flex;min-height:210px;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#8795a6;font-size:12px;text-align:center}
+.classroom-chat-compose{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:10px 12px;border-top:1px solid #dde5ed;background:#fff}.classroom-chat-intervention-head{grid-column:1/-1;display:flex;min-width:0;align-items:baseline;gap:8px}.classroom-chat-intervention-head strong{color:#263548;font-size:11px}.classroom-chat-intervention-head span{overflow:hidden;color:#7a899a;font-size: 10px;text-overflow:ellipsis;white-space:nowrap}.classroom-chat-quick{grid-column:1/-1;display:flex;gap:6px;overflow-x:auto}.classroom-chat-quick button{min-width:0;height:28px;padding:0 9px;border:1px solid #d2dce7;background:#f7f9fb;color:#50647b;font-size: 10px;font-weight:650;white-space:nowrap}.classroom-chat-compose input{width:100%;min-width:0;height:38px;padding:0 12px;border:1px solid #cfd9e4;border-radius:6px;background:#fff;color:#263548;font-size:12px;outline:none}.classroom-chat-compose input:focus{border-color:#4b82bd;box-shadow:0 0 0 3px rgba(75,130,189,.14)}.classroom-chat-compose input:disabled{background:#f3f5f7;color:#8a96a5}.classroom-chat-compose>button[type="submit"]{display:inline-flex;min-width:78px;height:38px;align-items:center;justify-content:center;gap:6px;padding:0 13px;border:0;border-radius:6px;background:#263b57;color:#fff;font-size:12px;font-weight:700;cursor:pointer}.classroom-chat-compose button:disabled{cursor:not-allowed;opacity:.48}.classroom-chat-error{grid-column:1/-1;color:#b42318;font-size:10px}
+@keyframes classroom-chat-enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@media(max-width:720px){.classroom-chat-head{align-items:flex-start;flex-direction:column;gap:8px}.classroom-chat-members{width:100%;margin-left:0}.classroom-chat-member>span{display:none}.classroom-chat-member.supervisor>span{display:inline}.classroom-chat-log{padding:11px}.classroom-chat-body{max-width:calc(100% - 40px)}.classroom-chat-bubble p{font-size:12px}.classroom-chat-compose button{min-width:40px;padding:0 10px}.classroom-chat-compose button span{display:none}}
+@media(prefers-reduced-motion:reduce){.classroom-chat-message{animation:none}.classroom-chat-log{scroll-behavior:auto}}
+
+/* E3-6: 介入意图/范围选择器 */
+.classroom-chat-intent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 6px;
+  flex-wrap: wrap;
+}
+.classroom-chat-intent button {
+  border: 1px solid #d6e2f0;
+  background: #f6f9fd;
+  color: #40546d;
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.classroom-chat-intent button.active {
+  border-color: #2f6fd0;
+  background: #e7f0fd;
+  color: #1b4d92;
+  font-weight: 650;
+}
+.classroom-chat-intent button.scope {
+  background: #fff;
+  color: #6b7c92;
+}
+.classroom-chat-intent button.scope.active {
+  border-color: #8fb4e3;
+  background: #f0f6ff;
+  color: #2f6fd0;
+}
+.classroom-chat-intent button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.classroom-chat-intent-divider {
+  width: 1px;
+  height: 14px;
+  background: #d6e2f0;
+  margin: 0 2px;
+}
+.classroom-chat-intent-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #2f6fd0;
+  font-size: 11px;
+  font-weight: 650;
+}

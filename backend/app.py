@@ -12,7 +12,6 @@ def _proactor_loop_setup(use_subprocess: bool = False) -> None:
 
     if sys.platform == "win32":
         _aio.set_event_loop_policy(_aio.WindowsProactorEventLoopPolicy())
-        _aio.get_event_loop_policy().new_event_loop()
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -37,11 +36,26 @@ from backend.workflows.repository import WorkflowRepository
 from backend.workflows.router import router as workflow_router
 from backend.workflows.service import WorkflowService
 from backend.workflows.llm import ModelClient
+from backend.classroom.repository import ClassroomRepository
+from backend.classroom.integration import ClassroomIntegrationService
+from backend.classroom.router import router as classroom_router
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("multi_agent_platform")
 settings = get_settings()
+
+
+class UTF8JSONResponse(JSONResponse):
+    """JSON responses must advertise UTF-8 explicitly.
+
+    Some legacy clients (notably Windows PowerShell 5.1 Invoke-RestMethod)
+    fall back to Latin-1 when Content-Type is a bare application/json, which
+    silently corrupts Chinese text on a read-modify-write round trip.
+    """
+
+    media_type = "application/json; charset=utf-8"
+
 
 
 @asynccontextmanager
@@ -54,6 +68,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await checkpointer.setup()
         service = WorkflowService(ModelClient(model_settings_service.config), repository, event_hub, checkpointer)
         app.state.workflow_service = service
+        classroom_repository = ClassroomRepository(settings.database_path)
+        await classroom_repository.initialize()
+        app.state.classroom_repository = classroom_repository
+        app.state.classroom_service = ClassroomIntegrationService(classroom_repository, event_hub)
         app.state.model_settings_service = model_settings_service
         logger.info("Workflow platform started with provider=%s model=%s", service.model.provider, service.model.model_name)
         yield
@@ -65,6 +83,7 @@ app = FastAPI(
     description="教师、分层学生与教学督导协作完成课程内容剖析、教学实施和迭代评价。",
     version="2.0.0",
     lifespan=lifespan,
+    default_response_class=UTF8JSONResponse,
 )
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -83,11 +102,12 @@ app.include_router(data_hub_router)
 app.include_router(model_settings_router)
 app.include_router(material_unit_router)
 app.include_router(material_unit_graph_router)
+app.include_router(classroom_router)
 
 
 @app.exception_handler(AppError)
 async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
-    return JSONResponse(
+    return UTF8JSONResponse(
         status_code=exc.status_code,
         content={
             "title": exc.code,
@@ -104,7 +124,7 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
     for item in exc.errors():
         sanitized = {key: value for key, value in item.items() if key not in {"input", "ctx"}}
         errors.append(sanitized)
-    return JSONResponse(
+    return UTF8JSONResponse(
         status_code=422,
         content={
             "title": "VALIDATION_ERROR",
@@ -120,7 +140,7 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
 async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     request_id = getattr(request.state, "request_id", None)
     logger.exception("Unhandled application error", extra={"request_id": request_id})
-    return JSONResponse(
+    return UTF8JSONResponse(
         status_code=500,
         content={
             "title": "INTERNAL_ERROR",
@@ -146,10 +166,13 @@ async def ready(request: Request) -> dict[str, str]:
 if __name__ == "__main__":
     import uvicorn
 
+    _proactor_loop_setup()
     uvicorn.run(
         "backend.app:app",
         host=settings.host,
         port=settings.port,
         reload=settings.app_env == "development",
-        loop=_proactor_loop_setup,
+        # The policy is configured above. Passing a callable here breaks
+        # uvicorn's reload subprocess because `loop` is an enum-like string.
+        loop="none",
     )

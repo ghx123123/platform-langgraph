@@ -80,6 +80,54 @@ class DataHubCatalog(BaseModel):
     blocks: list[DataHubBlock] = Field(default_factory=list)
 
 
+class ResultArtifact(BaseModel):
+    """一条可交付成果。
+
+    注意 result_type 是"成果类别"，不是工作流版本号——历史上 classroom_v2 这个名字
+    被同时用作工作流标识和"新版流程"的代称，这里避免再用。
+    """
+
+    id: str
+    result_type: Literal["lesson_plan", "courseware", "research", "package"]
+    title: str
+    detail: str = ""
+    archive_id: str | None = None
+    design_id: str | None = None
+    run_id: str | None = None
+    confirmed: bool = False
+    exported: bool = False
+    export_count: int = 0
+    updated_at: str = ""
+    count: int = 1
+
+
+class ResultSummaryRow(BaseModel):
+    result_type: Literal["lesson_plan", "courseware", "research", "package"]
+    label: str
+    count: int
+    detail: str = ""
+
+
+class ResultSummary(BaseModel):
+    """成果中心读数。
+
+    每类成果各自计数、单位互不相同，因此不提供跨类合计——把"份教案"和"套课件"
+    相加得到的数字没有意义（这正是旧版 outputs = 资料包数 + 导出次数 的问题）。
+    """
+
+    rows: list[ResultSummaryRow] = Field(default_factory=list)
+    total: int = 0
+
+
+class ResultList(BaseModel):
+    designs: list[ResultArtifact] = Field(default_factory=list)
+    courseware: list[ResultArtifact] = Field(default_factory=list)
+    research: list[ResultArtifact] = Field(default_factory=list)
+    packages: list[ResultArtifact] = Field(default_factory=list)
+    summary: ResultSummary
+    warnings: list[str] = Field(default_factory=list)
+
+
 class DataHubLayout(BaseModel):
     unit_id: str
     folders: list[DataHubFolder] = Field(default_factory=list)

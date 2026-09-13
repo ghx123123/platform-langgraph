@@ -114,6 +114,7 @@ class TeachingScope(BaseModel):
 
     selected_point_titles: list[str] = Field(default_factory=list, max_length=30)
     estimated_minutes: int = Field(default=45, ge=10, le=180)
+    ppt_slide_count: int | None = Field(default=None, ge=1, le=120)
     depth: Literal["overview", "standard", "deep"] = "standard"
 
 
@@ -195,6 +196,7 @@ class CreateRunRequest(BaseModel):
     max_iterations: int = Field(default=2, ge=1, le=5)
     context: str = Field(default="", max_length=10000)
     template_id: str = "teaching_design"
+    workflow_version: Literal["teaching_v1", "classroom_v2"] = "teaching_v1"
     interventions: InterventionPoint = Field(default_factory=InterventionPoint)
     scope: TeachingScope = Field(default_factory=TeachingScope)
 

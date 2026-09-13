@@ -39,6 +39,15 @@ import type {
   TeacherSectionGeneration,
   WorkflowRun,
   WorkflowTemplate,
+  LessonVersion,
+  SimulationRound,
+  ClassroomState,
+  ClassroomEvent,
+  TeacherDirective,
+  SupervisorObservation,
+  SupervisorProfile,
+  SupervisorReport,
+  RevisionPatch,
 } from '../types/workflow';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
@@ -100,6 +109,72 @@ export const workflowApi = {
   deleteRun: (runId: string) => request<void>(`/workflows/runs/${runId}`, { method: 'DELETE' }),
 };
 
+export const classroomApi = {
+  prepare: (runId: string, options?: { retry?: boolean; maxSlides?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.retry) params.set('retry', 'true');
+    if (options?.maxSlides) params.set('max_slides', String(options.maxSlides));
+    const query = params.toString();
+    return request<ClassroomStartStatus>(`/classroom/runs/${encodeURIComponent(runId)}/prepare${query ? `?${query}` : ''}`, { method: 'POST' });
+  },
+  start: (runId: string, maxRounds?: number) => request<ClassroomStartStatus>(`/classroom/runs/${encodeURIComponent(runId)}/start${maxRounds ? `?max_rounds=${maxRounds}` : ''}`, { method: 'POST' }),
+  getStartStatus: (runId: string) => request<ClassroomStartStatus>(`/classroom/runs/${encodeURIComponent(runId)}/start-status`),
+  listLessonVersions: (runId: string) => request<{ items: LessonVersion[] }>(`/classroom/runs/${encodeURIComponent(runId)}/lesson-versions`),
+  getLessonVersion: (runId: string, versionId: string) => request<LessonVersion>(`/classroom/runs/${encodeURIComponent(runId)}/lesson-versions/${encodeURIComponent(versionId)}`),
+  updateLessonDraft: (runId: string, version: LessonVersion) => request<LessonVersion>(`/classroom/runs/${encodeURIComponent(runId)}/lesson-versions/${encodeURIComponent(version.id)}`, { method: 'PUT', body: JSON.stringify({ title: version.title, learning_objectives: version.learning_objectives, knowledge_points: version.knowledge_points, estimated_minutes: version.estimated_minutes, slides: version.slides }) }),
+  listReviewMessages: (runId: string, versionId: string) => request<{ items: import('../types/workflow').LessonReviewMessage[] }>(`/classroom/runs/${encodeURIComponent(runId)}/lesson-versions/${encodeURIComponent(versionId)}/review-messages`),
+  reviseSlide: (runId: string, versionId: string, slideId: string, instruction: string) => request<{ lesson_version: LessonVersion; message: import('../types/workflow').LessonReviewMessage }>(`/classroom/runs/${encodeURIComponent(runId)}/lesson-versions/${encodeURIComponent(versionId)}/slides/${encodeURIComponent(slideId)}/revise`, { method: 'POST', body: JSON.stringify({ instruction }) }),
+  approveLessonVersion: (runId: string, versionId: string, maxRounds?: number, options?: { autoStart?: boolean }) => request<{ round?: SimulationRound; lesson_version?: LessonVersion; state?: ClassroomState; approved?: boolean; awaiting_start?: boolean }>(`/classroom/runs/${encodeURIComponent(runId)}/lesson-versions/${encodeURIComponent(versionId)}/approve?auto_start=${options?.autoStart === false ? 'false' : 'true'}${maxRounds ? `&max_rounds=${maxRounds}` : ''}`, { method: 'POST' }),
+  listRounds: (runId: string) => request<{ items: SimulationRound[] }>(`/classroom/runs/${encodeURIComponent(runId)}/rounds`),
+  getState: (runId: string, roundId: string) => request<ClassroomState | { run_id: string; round_id: string; state: null }>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/state`),
+  getEvents: (runId: string, roundId: string, after = 0) => request<{ items: ClassroomEvent[]; last_sequence: number }>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/events?after=${after}`),
+  getSnapshot: (runId: string, roundId: string) => request<import('../types/workflow').ClassroomSnapshot>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/snapshot`),
+  getReconstruction: (runId: string, roundId: string) => request<Record<string, unknown>>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/reconstruction`),
+  listObservations: (runId: string, roundId: string) => request<{ items: SupervisorObservation[] }>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/observations`),
+  getReport: (runId: string, roundId: string) => request<SupervisorReport>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/report`),
+  getSupervisorProfile: (runId: string) => request<SupervisorProfile>(`/classroom/runs/${encodeURIComponent(runId)}/agent-configs/supervisor`),
+  updateSupervisorProfile: (runId: string, profile: Pick<SupervisorProfile, 'role_definition' | 'system_prompt' | 'evaluation_focus'>) => request<SupervisorProfile>(`/classroom/runs/${encodeURIComponent(runId)}/agent-configs/supervisor`, { method: 'PUT', body: JSON.stringify(profile) }),
+  listDirectives: (runId: string, roundId?: string) => request<{ items: TeacherDirective[] }>(`/classroom/runs/${encodeURIComponent(runId)}/directives${roundId ? `?round_id=${encodeURIComponent(roundId)}` : ''}`),
+  cancelDirective: (runId: string, directiveId: string) =>
+    request<{ directive: TeacherDirective }>(`/classroom/runs/${encodeURIComponent(runId)}/directives/${encodeURIComponent(directiveId)}`, { method: 'DELETE' }),
+  listPatches: (runId: string, sourceRoundId?: string) => request<{ items: RevisionPatch[] }>(`/classroom/runs/${encodeURIComponent(runId)}/revision-patches${sourceRoundId ? `?source_round_id=${encodeURIComponent(sourceRoundId)}` : ''}`),
+  pause: (runId: string, roundId: string) => request<ClassroomState>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/pause`, { method: 'POST' }),
+  resume: (runId: string, roundId: string) => request<ClassroomState>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/resume`, { method: 'POST' }),
+  stop: (runId: string, roundId: string) => request<ClassroomState>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/stop`, { method: 'POST' }),
+  intervene: (runId: string, roundId: string, content: string, options?: { intent?: 'question' | 'correct' | 'require'; scope?: 'slide' | 'round' | 'lesson' }) => request<{ user_event: ClassroomEvent; teacher_event: ClassroomEvent; state: ClassroomState; directive?: TeacherDirective | null; patches?: Array<{ patch_id: string; slide_id: string; field_path: string; before: unknown; after: unknown; reason: string; status: string }> }>(`/classroom/runs/${encodeURIComponent(runId)}/rounds/${encodeURIComponent(roundId)}/interventions`, { method: 'POST', body: JSON.stringify({ content, intent: options?.intent ?? 'question', scope: options?.scope ?? 'round' }) }),
+};
+
+export interface ClassroomStartStatus {
+  run_id: string;
+  phase: 'idle' | 'queued' | 'blueprint_generating' | 'blueprint_ready' | 'awaiting_review' | 'classroom_starting' | 'classroom_running' | 'classroom_completed' | 'failed';
+  message: string;
+  generated_chars?: number;
+  preview?: string;
+  slide_previews?: Array<{ title: string; subtitle?: string; bullets?: string[] }>;
+  /** Number of complete slide objects received from the stream. */
+  closed_slide_count?: number;
+  /** Teacher-requested page count; previews are intentionally bounded. */
+  target_slide_count?: number | null;
+  /** Actual provider calls, including at most one structured retry. */
+  generation_attempt?: number;
+  /** Validation message that caused an automatic structured retry. */
+  generation_retry_reason?: string;
+  /** Stable id for the V1 generation request within a run. */
+  generation_request_id?: string;
+  version_id?: string;
+  round_id?: string;
+  error?: string;
+}
+export function lessonVersionExportUrl(runId: string, versionId: string, format: 'json' | 'md' | 'html' = 'json'): string {
+  return `${API_BASE}/classroom/runs/${encodeURIComponent(runId)}/lesson-versions/${encodeURIComponent(versionId)}/export?format=${format}`;
+}
+
+export function classroomEventsUrl(runId: string): string {
+  const explicit = import.meta.env.VITE_WS_BASE_URL as string | undefined;
+  const origin = explicit ? explicit.replace(/\/$/, '') : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+  return `${origin}${API_BASE}/classroom/runs/${encodeURIComponent(runId)}/events/ws`;
+}
+
 export const documentApi = {
   parse: (file: File) => {
     const body = new FormData();
@@ -153,10 +228,12 @@ export const courseDesignApi = {
     }),
   syncRun: (designId: string, runId: string) =>
     request<CourseDesignRecord>(`/course-designs/${designId}/sync-run/${runId}`, { method: 'POST' }),
-  assemblySources: (designId: string, runId?: string) =>
-    request<{ design_id: string; run_id?: string | null; items: CourseDesignAssemblySource[] }>(`/course-designs/${designId}/assembly-sources${runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`),
-  applyAssembly: (designId: string, input: { base_version: number; source_ids: string[]; target_field: CourseDesignAssemblyTarget; mode: 'replace' | 'prepend' | 'append'; custom_content?: string; custom_title?: string }, runId?: string) =>
-    request<CourseDesignRecord>(`/course-designs/${designId}/assembly/apply${runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`, { method: 'POST', body: JSON.stringify(input) }),
+  // runId 语义：undefined = 后端回退到 design.run_id；null = 显式声明「仅使用进度表/大纲/知识范围」
+  // （必须用 null 发 ?run_id=，否则切换回默认项时后端仍会回退到 design.run_id）。
+  assemblySources: (designId: string, runId?: string | null) =>
+    request<{ design_id: string; run_id?: string | null; items: CourseDesignAssemblySource[]; warning?: string | null }>(`/course-designs/${designId}/assembly-sources${runId === null ? '?run_id=' : runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`),
+  applyAssembly: (designId: string, input: { base_version: number; source_ids: string[]; target_field: CourseDesignAssemblyTarget; mode: 'replace' | 'prepend' | 'append'; custom_content?: string; custom_title?: string }, runId?: string | null) =>
+    request<CourseDesignRecord>(`/course-designs/${designId}/assembly/apply${runId === null ? '?run_id=' : runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`, { method: 'POST', body: JSON.stringify(input) }),
   source: (designId: string, referenceId: string) =>
     request<CourseReferenceDetail>(`/course-designs/${designId}/references/${referenceId}`),
   delete: (designId: string) => request<void>(`/course-designs/${designId}`, { method: 'DELETE' }),
@@ -339,6 +416,9 @@ export const dataHubApi = {
   reloadMaterial: (archiveId: string, materialId: string) =>
     request<{ archive_id: string; material_id: string; reloaded: boolean; updated_at: string }>(`/data-hub/archives/${archiveId}/materials/${materialId}/reload`, { method: 'POST' }),
   listCompositions: () => request<{ items: CompositionSummary[] }>('/data-hub/compositions'),
+  // 成果中心读数：按类别汇总可交付成果（教案/课件/教研/资料包），取代旧的
+  // 「资料包数 + 导出次数」混合单位口径。
+  results: () => request<import('../types/workflow').ResultList>('/data-hub/results'),
   getComposition: (id: string) => request<CompositionRecord>(`/data-hub/compositions/${id}`),
   createComposition: (input: { title: string; archive_id?: string | null; unit_id?: string | null; blocks: CompositionBlock[] }) =>
     request<CompositionRecord>('/data-hub/compositions', { method: 'POST', body: JSON.stringify(input) }),

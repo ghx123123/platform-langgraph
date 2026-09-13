@@ -207,6 +207,44 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
   const [aiOptimizeInstruction, setAiOptimizeInstruction] = useState('');
   const [optimizing, setOptimizing] = useState(false);
   const [textbookFilter, setTextbookFilter] = useState<string>('all');
+  // 正文默认折成两行，超长才给「展开全文」。
+  // 注意：不能用 scrollHeight 判断——-webkit-line-clamp 下 Chrome 仍返回裁剪后的高度，
+  // 永远量不到溢出。改为按容器宽度估算可容字数（中文约 1 字宽 ≈ 1 字号）。
+  const ClampedText = ({ text, id }: { text: string; id: string }) => {
+    const ref = useRef<HTMLElement | null>(null);
+    const [overflowing, setOverflowing] = useState(false);
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return;
+      const cs = getComputedStyle(el);
+      const fontSize = parseFloat(cs.fontSize) || 13;
+      const perLine = Math.max(10, Math.floor(el.clientWidth / (fontSize * 0.92)));
+      setOverflowing(text.length > perLine * 2);
+    }, [text]);
+    const isOpen = expanded.has(id);
+    return (
+      <>
+        <small ref={ref as React.RefObject<HTMLElement>}>{text}</small>
+        {(overflowing || isOpen) && (
+          <button
+            type="button"
+            className="row-expand"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleExpanded(id);
+            }}
+          >
+            {isOpen ? '收起' : '展开全文'}
+          </button>
+        )}
+      </>
+    );
+  };
+
+  // 大纲要求/教材节点的正文很长（实测单条 181 字），默认折叠两行，按需展开
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => setExpanded((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const [scheduleFilter, setScheduleFilter] = useState<string>('all');
   const [syllabusFilter, setSyllabusFilter] = useState<string>('all');
   const [rawText, setRawText] = useState<string | null>(null);
@@ -578,7 +616,8 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
       ? (side?.getBoundingClientRect().width ?? 250)
       : (outline?.getBoundingClientRect().width ?? 430);
     dragSplit.current = { which, startX, startW };
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.currentTarget.classList.add('is-dragging');
   };
   const onSplitMove = (e: React.PointerEvent) => {
     const d = dragSplit.current;
@@ -594,7 +633,13 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
       setColW((cur) => ({ ...cur, outline: w }));
     }
   };
-  const endSplitDrag = () => { dragSplit.current = null; };
+  const endSplitDrag = (e: React.PointerEvent) => {
+    dragSplit.current = null;
+    e.currentTarget.classList.remove('is-dragging');
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
   // 三列用 CSS 变量驱动列宽(flex-basis), 拖动时实时更新
   const muLayoutStyle: React.CSSProperties | undefined = (colW.side || colW.outline)
     ? ({ '--muw-side': `${colW.side ?? 260}px`, '--muw-outline': `${colW.outline ?? 420}px` } as React.CSSProperties)
@@ -826,13 +871,14 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
     </header>
     {(error || notice) && <div className={`material-unit-message ${error ? 'is-error' : ''}`}><AlertCircle size={16} /><span>{error || notice}</span><button type="button" onClick={() => { setError(''); setNotice(''); }} aria-label="关闭提示"><X size={15} /></button></div>}
     {!units.length ? <main className="material-unit-empty"><Database size={30} /><h3>还没有资料单元</h3><p>请先到课程资料库选择进度表、大纲和教材。</p><button type="button" onClick={onGoLibrary}>前往课程资料库</button></main> : <div className="material-unit-layout" style={muLayoutStyle}>
-      <div className="mu-split" data-split="0" onPointerDown={startSplitDrag('0')} onPointerMove={onSplitMove} onPointerUp={endSplitDrag} /><aside className="unit-sidebar">
+      <aside className="unit-sidebar">
         <header><strong>单元列表</strong><span>{units.length}</span></header>
         <div className="unit-list">{units.map((item) => <div key={item.id} className={`unit-list-item ${unit?.id === item.id ? 'active' : ''}`}><button type="button" onClick={() => void openUnit(item.id)}><Database size={17} /><span><strong>{item.title}</strong><small>{item.material_count} 份资料 · {item.linked_unit_count} 个关联</small><time>{formatDate(item.updated_at)}</time></span></button><div><button type="button" aria-label={`重命名 ${item.title}`} title="重命名" onClick={() => setDialog({ mode: 'rename', unit: item, title: item.title })}><Edit3 size={14} /></button><button type="button" aria-label={`删除 ${item.title}`} title="删除" onClick={() => setDialog({ mode: 'delete', unit: item })}><Trash2 size={14} /></button></div></div>)}</div>
         <footer><button type="button" disabled={!unit || units.length < 2} onClick={() => unit && setDialog({ mode: 'link-files', target: unit, sourceUnitId: '', materialIds: [] })}><Link2 size={15} />关联其他单元资料</button><button type="button" disabled={!unit || units.length < 2} onClick={() => unit && setDialog({ mode: 'merge', target: unit, sourceIds: [], title: unit.title })}><GitMerge size={15} />整合为一个单元</button></footer>
         {unit && <section className="unit-sources"><header><strong>当前资料</strong><span>{availableFiles.length}</span></header>{availableFiles.map((file) => <button type="button" key={file.material_id} onClick={() => void openFilePreview(file)}><Files size={15} /><span><strong>{file.name}</strong><small>{categoryLabels[file.category] || file.category} · {file.parse_status === 'parsed' ? `已提取 ${file.character_count} 字` : file.parse_status === 'parse_failed' ? '提取失败' : file.parse_status === 'unsupported' ? '格式不支持' : '未提取'}<i className={`parse-dot ${file.parse_status}`} /></small></span></button>)}{unit.material_references.map((reference) => <div className="file-reference" key={reference.id}><Link2 size={14} /><span><strong>{reference.file.name}</strong><small>关联自 {reference.source_unit_title}</small></span><button type="button" aria-label={`解除关联 ${reference.file.name}`} onClick={() => void removeFileReference(reference.id)} title="解除关联"><Unlink size={14} /></button></div>)}</section>}
       </aside>
 
+      <div className="mu-split" data-split="0" onPointerDown={startSplitDrag('0')} onPointerMove={onSplitMove} onPointerUp={endSplitDrag} onPointerCancel={endSplitDrag} onLostPointerCapture={endSplitDrag} />
       <main className="scope-workbench">
         {matching && <div className="matching-status" role="status" aria-live="polite"><Loader2 className="spin" size={16} /><span>{matchingWithModel ? '正在用 AI 语义增强“' : '正在快速匹配“'}{sessionItem?.title || '当前讲次'}”的大纲要求 · 已用时 {matchingElapsed}s</span><button type="button" className="match-cancel" onClick={cancelMatch}>取消匹配</button></div>}
         {!matching && matchError && selectedSession && <div className="matching-error" role="alert"><AlertCircle size={15} /><span>{matchError}</span><button type="button" onClick={() => void runMatch(selectedSession)}>重新匹配</button></div>}
@@ -849,17 +895,17 @@ export function MaterialUnitWorkspace({ refreshKey, onGoLibrary, onCourseDesignC
         </select>
         <small style={{ color: '#6b7e93', fontSize: 11 }}>导入新大纲后，重新选择讲次即可重新匹配</small>
       </div>
-      {(['objective', 'knowledge', 'key_point', 'difficult_point', 'practice', 'assessment'] as SyllabusRequirementType[]).map((category) => { const items = visible.filter((item) => item.category === category); return items.length ? <div className="requirement-group" key={category}><h4>{requirementLabels[category]}<span>{items.length}</span></h4>{items.map((item) => { const crossArchive = isForeignEvidence(item.evidence); const disabled = Boolean(item.stale || crossArchive); return <label key={`${item.id}:${item.original_id || ''}`} className={`${selectedRequirements.includes(item.id) ? 'selected' : ''} ${item.stale ? 'is-stale' : ''} ${crossArchive ? 'is-cross-archive' : ''}`}><input type="checkbox" disabled={disabled} checked={!disabled && selectedRequirements.includes(item.id)} onChange={() => { if (!disabled) toggle(selectedRequirements, item.id, setSelectedRequirements); }} /><span><strong>{item.title}</strong><small>{item.content}</small><em>{item.stale ? '历史快照 · 请重新匹配后再纳入本次大纲' : crossArchive ? '关联资料库要求 · 仅供浏览' : `${Math.round(item.score * 100)}% · ${item.reason}`}</em></span></label>; })}</div> : null; })}
+      {(['objective', 'knowledge', 'key_point', 'difficult_point', 'practice', 'assessment'] as SyllabusRequirementType[]).map((category) => { const items = visible.filter((item) => item.category === category); return items.length ? <div className="requirement-group" key={category}><h4>{requirementLabels[category]}<span>{items.length}</span></h4>{items.map((item) => { const crossArchive = isForeignEvidence(item.evidence); const disabled = Boolean(item.stale || crossArchive); return <label key={`${item.id}:${item.original_id || ''}`} className={`${selectedRequirements.includes(item.id) ? 'selected' : ''} ${item.stale ? 'is-stale' : ''} ${crossArchive ? 'is-cross-archive' : ''} ${expanded.has(item.id) ? 'is-expanded' : ''}`}><input type="checkbox" disabled={disabled} checked={!disabled && selectedRequirements.includes(item.id)} onChange={() => { if (!disabled) toggle(selectedRequirements, item.id, setSelectedRequirements); }} /><span><strong title={item.title}>{item.title}</strong><ClampedText text={item.content} id={item.id} /><em>{item.stale ? '历史快照 · 请重新匹配后再纳入本次大纲' : crossArchive ? '关联资料库要求 · 仅供浏览' : `${Math.round(item.score * 100)}% · ${item.reason}`}</em></span></label>; })}</div> : null; })}
       <details className="matching-meta"><summary>查看匹配说明</summary><p>{alignment?.model_used ? '已使用智能体语义判断并结合章节、关键词证据。' : '先用章节、关键词和文本相似度快速匹配。'}候选大纲共 {alignment?.total_candidates || 0} 条。</p></details>{alignmentSource === 'matched' && !alignment?.model_used && <button type="button" className="match-enhance" onClick={() => void runMatch(selectedSession, true)}><Sparkles size={14} />AI 语义增强（可选）</button>}
     </>); })()}</div>}</section>
 
-          <section className="planning-step is-open"><header><span>3</span><div><strong>确定教材知识范围</strong><small>按一级、二级、三级标题选择本次课需要覆盖的知识点</small></div><em>{selectedTextbook.length} 项</em></header>{textbookRestoreWarning > 0 && <div className="selection-restore-warning" role="status" aria-live="polite"><AlertCircle size={14} aria-hidden="true" /><span>历史大纲中有 {textbookRestoreWarning} 个教材节点定位已变化，已恢复其余范围；请重新选择缺失章节。</span></div>}<div className="textbook-tree module-scroll">{(() => { const all = scope?.textbook_outline || []; const materialIds = [...new Set(all.map((i) => i.source_material_id))]; const nameOf = (mid: string) => unit?.files?.find((f) => f.material_id === mid)?.name || all.find((i) => i.source_material_id === mid)?.source_name || mid.slice(0, 8); const sourceOptions = materialIds.map((mid) => ({ mid, name: nameOf(mid) })); const filtered = textbookFilter === 'all' ? all : all.filter((i) => i.source_material_id === textbookFilter); if (!all.length) return <p className="step-empty">尚未识别到教材目录，请关联或导入教材文件（需为"教材"类且已识别）。</p>; return <><div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '0 0 8px' }}><small style={{ color: '#6b7e93', fontSize: 12 }}>教材来源</small><select value={textbookFilter} onChange={(event) => setTextbookFilter(event.target.value)} style={{ fontSize: 12, padding: '3px 8px', border: '1px solid #cbd8e5', borderRadius: 5, background: '#fff', maxWidth: 340 }}><option value="all">全部教材（{sourceOptions.length} 本）</option>{sourceOptions.map((o) => <option key={o.mid} value={o.mid}>{o.name}</option>)}</select>{!selectedSession && <small style={{ color: '#b45309', fontSize: 11 }}>提示：先在步骤1选择讲次，可按讲次匹配大纲要求（教材目录可先浏览）</small>}</div>{filtered.map((item) => { const graphFor = unitGraphNodes.filter((g) => (g.quote && (item.title && g.quote.includes(item.title))) || g.material_id === item.source_material_id); const crossArchive = isForeignScopeItem(item, unit?.archive_id); return <label key={item.id} className={`level-${item.level} ${selectedTextbook.includes(item.id) ? 'selected' : ''} ${crossArchive ? 'is-cross-archive' : ''}`}><input type="checkbox" disabled={crossArchive} checked={!crossArchive && selectedTextbook.includes(item.id)} onChange={() => { if (!crossArchive) toggle(selectedTextbook, item.id, setSelectedTextbook); }} /><span style={{ minWidth: 0 }}><strong>{item.title}</strong><small>{item.preview || `来源：${nameOf(item.source_material_id)}`}</small>{crossArchive && <small className="cross-archive-note">关联资料库 · 仅供浏览</small>}{graphFor.length > 0 && <small style={{ color: '#1857b7', fontWeight: 700 }}><BookMarked size={12} aria-hidden="true" />图谱节点 {graphFor.length} 个 — 选中本节点后可插入</small>}</span></label>; })}</>; })()}</div></section>
+          <section className="planning-step is-open"><header><span>3</span><div><strong>确定教材知识范围</strong><small>按一级、二级、三级标题选择本次课需要覆盖的知识点</small></div><em>{selectedTextbook.length} 项</em></header>{textbookRestoreWarning > 0 && <div className="selection-restore-warning" role="status" aria-live="polite"><AlertCircle size={14} aria-hidden="true" /><span>历史大纲中有 {textbookRestoreWarning} 个教材节点定位已变化，已恢复其余范围；请重新选择缺失章节。</span></div>}<div className="textbook-tree module-scroll">{(() => { const all = scope?.textbook_outline || []; const materialIds = [...new Set(all.map((i) => i.source_material_id))]; const nameOf = (mid: string) => unit?.files?.find((f) => f.material_id === mid)?.name || all.find((i) => i.source_material_id === mid)?.source_name || mid.slice(0, 8); const sourceOptions = materialIds.map((mid) => ({ mid, name: nameOf(mid) })); const filtered = textbookFilter === 'all' ? all : all.filter((i) => i.source_material_id === textbookFilter); if (!all.length) return <p className="step-empty">尚未识别到教材目录，请关联或导入教材文件（需为"教材"类且已识别）。</p>; return <><div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '0 0 8px' }}><small style={{ color: '#6b7e93', fontSize: 12 }}>教材来源</small><select value={textbookFilter} onChange={(event) => setTextbookFilter(event.target.value)} style={{ fontSize: 12, padding: '3px 8px', border: '1px solid #cbd8e5', borderRadius: 5, background: '#fff', maxWidth: 340 }}><option value="all">全部教材（{sourceOptions.length} 本）</option>{sourceOptions.map((o) => <option key={o.mid} value={o.mid}>{o.name}</option>)}</select>{!selectedSession && <small style={{ color: '#b45309', fontSize: 11 }}>提示：先在步骤1选择讲次，可按讲次匹配大纲要求（教材目录可先浏览）</small>}</div>{filtered.map((item) => { const graphFor = unitGraphNodes.filter((g) => (g.quote && (item.title && g.quote.includes(item.title))) || g.material_id === item.source_material_id); const crossArchive = isForeignScopeItem(item, unit?.archive_id); return <label key={item.id} className={`level-${item.level} ${selectedTextbook.includes(item.id) ? 'selected' : ''} ${crossArchive ? 'is-cross-archive' : ''} ${expanded.has(item.id) ? 'is-expanded' : ''}`}><input type="checkbox" disabled={crossArchive} checked={!crossArchive && selectedTextbook.includes(item.id)} onChange={() => { if (!crossArchive) toggle(selectedTextbook, item.id, setSelectedTextbook); }} /><span><strong title={item.title}>{item.title}</strong>{crossArchive && <small className="cross-archive-note">关联资料库 · 仅供浏览</small>}{graphFor.length > 0 && <small className="graph-badge"><BookMarked size={12} aria-hidden="true" />图谱节点 {graphFor.length} 个 · 选中本节点后可插入</small>}<ClampedText text={item.preview || `来源：${nameOf(item.source_material_id)}`} id={item.id} /></span></label>; })}</>; })()}</div></section>
 
           <footer className="scope-actions"><div><strong>{sessionItem?.title || '尚未选择讲次'}</strong><span>已选 {selectedRequirements.length} 条大纲要求、{selectedTextbook.length} 个教材标题</span></div><button type="button" disabled={mutating || !selectedSession || (!selectedRequirements.length && !selectedTextbook.length)} onClick={() => void createOutline()}>{mutating ? <Loader2 className="spin" size={16} /> : <BookOpen size={16} />}生成知识大纲</button></footer>
         </>}
       </main>
 
-      <div className="mu-split" data-split="1" onPointerDown={startSplitDrag('1')} onPointerMove={onSplitMove} onPointerUp={endSplitDrag} /><aside className="outline-panel">
+      <div className="mu-split" data-split="1" onPointerDown={startSplitDrag('1')} onPointerMove={onSplitMove} onPointerUp={endSplitDrag} onPointerCancel={endSplitDrag} onLostPointerCapture={endSplitDrag} /><aside className="outline-panel">
         <header><div><span>本次课成果</span><strong>知识大纲</strong><small>只定义要讲的知识点，不编排教学活动和讲解顺序</small></div>{outline && <select value={`${outline.id}:${outline.version}`} onChange={(event) => { const [id, version] = event.target.value.split(':'); selectOutline(outlines.find((item) => item.id === id && item.version === Number(version)) || null); }}>{outlines.slice().sort((a, b) => b.updated_at.localeCompare(a.updated_at)).map((item) => <option key={`${item.id}:${item.version}`} value={`${item.id}:${item.version}`}>v{item.version} · {item.title}</option>)}</select>}<button type="button" className="outline-history-btn" aria-label="版本历史" title="版本历史" onClick={() => setOutlineHistoryOpen(true)}><History size={13} /></button>{outline && <button type="button" className="outline-import-btn" disabled={!selectedSession || matching} title={!selectedSession ? '请先选择本次课讲次' : matching ? '请等待当前讲次的大纲匹配完成' : '导入课程设计'} onClick={() => { if (!selectedSession || matching) return; const ids = defaultImportMaterialIds; setDialog({ mode: 'import-design', outlineKey: `${outline.id}:${outline.version}`, materialIds: ids, primaryMaterialId: getDefaultImportPrimary(ids), sessionId: selectedSession, sessionTitle: sessionItem?.title || selectedSession }); }}><Send size={13} />{matching ? '匹配中…' : '导入课程设计'}</button>}</header>
         {!outline ? <div className="outline-empty"><BookOpen size={28} /><strong>尚未生成知识大纲</strong><span>完成左侧范围规划后，结果会固定显示在这里。</span>{latest.length > 0 && <button type="button" onClick={() => selectOutline(latest[0])}>打开最近大纲</button>}</div> : <>
           <div className="outline-status"><span className={outline.status === 'confirmed' ? 'confirmed' : ''}>{outline.status === 'confirmed' ? '已确认' : '草稿'}</span><strong>第 {outline.version} 版</strong><small>{outline.change_summary}</small></div>
@@ -977,31 +1023,36 @@ function FilePreview({ file, onClose, parseProgress, rawText, rawPages, rawLoadi
   // 避免"思考中关闭后再进"看到空白 — 与后端"先落库问题再回答"配合:
   const restoreChat = useCallback(async () => {
     if (!unitId) return;
-    try {
-      const resp = await materialUnitApi.graphChats(unitId, file.material_id);
-      const latest = resp.items?.[0];
-      if (!latest || !latest.rounds?.length) return;
-      setChatId(latest.id);
-      setRounds(latest.rounds);
-      // 若最后一轮是 user(回答还没回来/思考中关闭), 把问题放回输入框, 用户可重发或续聊
-      const lastC = latest.rounds[latest.rounds.length - 1];
-      const lastIsQ = lastC?.role === 'user';
-      if (lastIsQ && !question) setQuestion(lastC.content);
-      if (latest.context_node_id) {
-        setContextNodeId(latest.context_node_id);
-        const parent = graphNodes.find((n) => n.id === latest.context_node_id);
-        setRoundsTitle(parent ? `基于「${parent.title}」` : '基于图谱节点讨论');
-      }
-    } catch (_e) { /* 忽略: 无历史或加载失败不打断预览 */ }
+    // 默认不自动加载旧对话: 用户打开新文件时看到干净的讨论区, 不会误以为
+    // “串了别的话题”。只有用户主动续聊或点“清空历史”后才进入对话状态。
+    // 后端仍会按 unit+material 隔离落库, 此处仅停止前端自动回填 rounds。
+    setChatId('');
+    setRounds([]);
+    setContextNodeId('');
+    setRoundsTitle('');
   }, [unitId, file.material_id]);
   useEffect(() => { void restoreChat(); }, [restoreChat]);
   const sendGraph = async () => {
     if (!unitId || !question.trim()) return;
     setGraphBusy(true); setGraphError('');
     try {
-      const resp = await materialUnitApi.graphChat(unitId, { material_id: file.material_id, question: question.trim(), quote: quote || undefined, chat_id: chatId || undefined, context_node_id: contextNodeId || undefined });
+      const pending = question.trim();
+      // 发送即显示“我的问题”，置为思考中，避免无状态；
+      // 后端返回后替换最后一条 assistant 占位为真实回答。
+      setRounds((cur) => [...cur, { role: 'user', content: pending }, { role: 'assistant', content: '思考中…' }]);
+      setQuestion('');
+      const resp = await materialUnitApi.graphChat(unitId, { material_id: file.material_id, question: pending, quote: quote || undefined, chat_id: chatId || undefined, context_node_id: contextNodeId || undefined });
       setChatId(resp.chat_id);
-      setRounds((cur) => [...cur, { role: 'user', content: resp.question }, { role: 'assistant', content: resp.answer }]);
+      setRounds((cur) => {
+        const next = [...cur];
+        for (let i = next.length - 1; i >= 0; i--) {
+          if (next[i].role === 'assistant' && next[i].content === '思考中…') {
+            next[i] = { role: 'assistant', content: resp.answer };
+            break;
+          }
+        }
+        return next;
+      });
       if (!roundsTitle && contextNodeId) {
         const parent = graphNodes.find((n) => n.id === contextNodeId);
         if (parent) setRoundsTitle(`基于「${parent.title}」`);

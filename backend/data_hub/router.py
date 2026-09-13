@@ -15,6 +15,7 @@ from backend.course_archives.storage import list_archives, load_archive, save_ar
 from backend.course_archives.models import CourseArchiveDetail
 from backend.course_designs.storage import list_designs
 from backend.data_hub.models import (
+    ResultList,
     AcademicTermRename, AcademicTermRenameResult, ArchiveMetadataUpdate, CompositionCreate, CompositionList, CompositionRecord,
     BrowserSourceRegisterRequest, ExternalOpenResult, MaterialReloadResult,
     CompositionSummary, CompositionUpdate, DataHubBlock, DataHubBlocksMove, DataHubBlockUpdate, DataHubCatalog,
@@ -26,6 +27,7 @@ from backend.data_hub.models import (
 from backend.data_hub.service import (
     apply_layouts, block_detail, build_catalog, composition_docx, composition_html, composition_markdown,
     composition_summary, create_composition, filter_catalog, import_composition,
+    build_results,
     create_data_folder, delete_data_folder, delete_data_folder_recursive, ensure_data_folder_path, folder_subtree_ids,
     apply_platform_to_local, local_source_diff, organize_imported_archive, record_local_deletions,
     remove_blocks_from_layout, resolve_local_folder_path, scan_local_source,
@@ -59,6 +61,69 @@ async def _source_records(request: Request) -> tuple[list[dict], list[dict], lis
     return archives, designs, [item.model_dump(mode="json") for item in runs], compositions, layouts
 
 
+async def _classroom_results(request: Request, runs: list[dict]) -> tuple[dict, list[str]]:
+    """按 run_id 汇总课堂演练产物。
+
+    课堂库是独立 SQLite 库且由进程内服务持有；这里读不到就返回空并给出告警，
+    绝不能让成果中心整体 500。运行中的 run 其轮次/课件同样计入（演练本身即教研成果），
+    但课件只有 ready/final 才算"已审阅"。
+    """
+    repository = getattr(request.app.state, "classroom_repository", None)
+    if repository is None:
+        return {}, ["未连接到课堂演练数据库，课件与教研成果暂不可用"]
+    # 只有"绑定到某份课程设计"的会话才算课程设计的产出。工作流库里有大量实验性
+    # 会话（测试/调试/回归跑批），把它们算进成果会让成果中心被噪声淹没——
+    # 口径必须与 内容编排 的文件选择器一致（那里同样只列已绑定会话）。
+    bound = {
+        run.get("id")
+        for run in runs
+        if (run.get("teaching_data") or {}).get("design_id")
+    }
+    collected: dict[str, dict] = {}
+    warnings: list[str] = []
+    for run in runs:
+        run_id = run.get("id")
+        if not run_id or run_id not in bound:
+            continue
+        try:
+            lessons = await repository.list_lesson_versions(run_id)
+            rounds = await repository.list_simulation_rounds(run_id)
+        except Exception:
+            continue
+        if not lessons and not rounds:
+            continue
+        reports = 0
+        for round_item in rounds:
+            try:
+                if await repository.get_supervisor_report(round_item.id) is not None:
+                    reports += 1
+            except Exception:
+                continue
+        ordered = [item.model_dump(mode="json") for item in lessons]
+        published = [item for item in ordered if item.get("status") in ("ready", "final")]
+        collected[run_id] = {
+            "lessons": ordered,
+            "latest_lesson": (published or ordered)[-1] if (published or ordered) else None,
+            "rounds": [item.model_dump(mode="json") for item in rounds],
+            "reports": reports,
+        }
+    return collected, warnings
+
+
+@router.get("/results", response_model=ResultList)
+async def results(request: Request) -> ResultList:
+    """成果中心读数：按类别汇总可交付成果。
+
+    取代旧的 `资料包数 + 导出次数` —— 那是把两种异质单位相加，且重复导出会虚高、
+    课堂演练的课件与教研成果完全缺席。
+    """
+    settings = get_settings()
+    archives, designs, runs, compositions, _layouts = await _source_records(request)
+    classroom, warnings = await _classroom_results(request, runs)
+    payload = await run_in_threadpool(build_results, designs, runs, compositions, classroom)
+    return ResultList.model_validate({**payload, "warnings": warnings})
+
+
 @router.get("/catalog", response_model=DataHubCatalog)
 async def catalog(
     request: Request,
@@ -79,7 +144,8 @@ async def catalog(
         compositions = [item for item in compositions if item.get("archive_id") == archive_id or item.get("unit_id") == unit_id]
         layouts = [item for item in layouts if item.get("unit_id") == unit_id]
     result = await run_in_threadpool(
-        build_catalog, archives, designs, runs, compositions, not summary_only, unit_id or None,
+        build_catalog, archives, designs, runs, compositions, not summary_only,
+        unit_id or None, summary_only,
     )
     arranged = await run_in_threadpool(apply_layouts, result, layouts)
     filtered = filter_catalog(arranged, q, term, course, kind)

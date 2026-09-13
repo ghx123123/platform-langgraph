@@ -97,6 +97,9 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  /* 窄卡片放不下时间+状态时换行，而不是把状态文字裁掉 */
+  flex-wrap: wrap;
+  row-gap: 2px;
   color: #64748b;
   font-size: 11px;
   line-height: 1;
@@ -112,7 +115,10 @@
 }
 
 .session-card-status-text {
-  flex: none;
+  /* flex:none 会让它拒绝收缩 → 省略号永远不生效，文字被硬裁。
+     改成可收缩 + 省略号，被截断时完整文案仍可 hover 查看。 */
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -215,4 +221,18 @@
   .session-card {
     max-width: none;
   }
+}
+
+/* D3: 运行中会话长时间无进展 —— 可能已中断, 需要让教师看得出来 */
+.session-card-stalled {
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #92400e;
+  background: #fef3c7;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.session-card.is-stalled {
+  border-color: #f5d08a;
 }

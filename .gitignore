@@ -62,3 +62,7 @@ shot-*.png
 
 # Local dsh session data
 .dsh-sessions/
+# 交互测试过程截图（约 50MB，可由 scripts/ui_drive.py 与 capture_*.py 重新生成）
+# 说明书成品 docs/申报书/ 保留，它属于交付物而不是过程证据
+screenshots/
+/*.png

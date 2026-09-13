@@ -29,7 +29,8 @@
 .dashboard-module-value em { color: #465a72; font-size: 14px; line-height: 1; font-style: normal; font-weight: 600; white-space: nowrap; }
 .dashboard-module-note { grid-column: 1 / -1; color: #65758a; font-size: 11px; }
 
-.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(270px, .66fr); gap: 10px; margin-top: 10px; }
+/* align-items:start：右列按自身内容高度排布，不再被左列拉高留出整片空白 */
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(270px, .66fr); align-items: start; gap: 10px; margin-top: 10px; }
 .dashboard-primary { min-width: 0; }
 .dashboard-panel { min-width: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.9); border-radius: 7px; background: rgba(255,255,255,.78); box-shadow: 0 8px 26px rgba(86,60,43,.05); }
 .dashboard-panel > header { min-height: 48px; padding: 0 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid rgba(118,98,86,.12); }
@@ -69,7 +70,9 @@
 .dashboard-recent small, .dashboard-recent time { color: #65758a; font-size: 11px; }
 .dashboard-recent p { color: #87909d; font-size: 11px; text-align: center; }
 
-.dashboard-tasks { display: grid; grid-template-rows: 48px auto minmax(160px, 1fr); }
+/* 末行不再拉伸：聚焦卡原会撑到整列高度，卡内只剩 111px 内容却占 547px，
+   大片深色空白反而抢走注意力。改为贴合自身内容。 */
+.dashboard-tasks { display: grid; grid-template-rows: 48px auto auto; align-content: start; }
 .dashboard-task-list { padding: 5px 12px 9px; }
 .dashboard-task-list > button { width: 100%; min-height: 52px; display: grid; grid-template-columns: 4px minmax(0,1fr) 15px; align-items: center; gap: 8px; border: 0; border-bottom: 1px solid rgba(118,98,86,.09); color: #344257; background: transparent; text-align: left; }
 .dashboard-task-list > button > i { width: 4px; height: 28px; border-radius: 3px; background: var(--module-color); }
@@ -78,7 +81,9 @@
 .dashboard-task-list small { color: #65758a; font-size: 11px; }
 .dashboard-task-list svg { color: #87919e; }
 .dashboard-task-list > p { min-height: 100px; display: grid; place-content: center; justify-items: center; gap: 6px; color: #699481; font-size: 11px; }
-.dashboard-focus { margin: 0 12px 12px; padding: 13px; align-self: stretch; border-radius: 7px; color: white; background: #2c3d54; }
+/* 聚焦卡：让内容撑满并垂直居中，避免卡片下半部留出大片空白 */
+.dashboard-focus { margin: 0 12px 12px; padding: 13px; align-self: start; border-radius: 7px; color: white; background: #2c3d54; display: flex; flex-direction: column; justify-content: center; }
+.dashboard-focus > * { flex: none; }
 .dashboard-focus span { color: rgba(255,255,255,.7); font-size: 11px; }
 .dashboard-focus strong { display: block; margin-top: 4px; font-size: 14px; }
 .dashboard-focus p { min-height: 46px; margin-top: 8px; color: rgba(255,255,255,.8); font-size: 11px; line-height: 1.65; }
@@ -92,3 +97,23 @@
 @media (prefers-reduced-motion: reduce) {
   .dashboard-modules > button, .dashboard-flow-part > button > span { transition: none; }
 }
+
+/* 成果构成：按类别列出交付物，替代旧的「资料包数 + 导出次数」混合口径 */
+.dashboard-results > header b { font-variant-numeric: tabular-nums; }
+.dashboard-result-list { display: grid; gap: 6px; }
+.dashboard-result-list button {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 11px; border: 1px solid #e2e8f0; border-radius: 7px;
+  background: #f8fafc; text-align: left; cursor: pointer;
+}
+.dashboard-result-list button:hover { border-color: #bfd4e8; background: #f1f7fd; }
+.dashboard-result-list button > span { display: grid; gap: 2px; min-width: 0; }
+.dashboard-result-list button strong { color: #26384f; font-size: 12px; }
+.dashboard-result-list button small { color: #7b8b9d; font-size: 10px; }
+.dashboard-result-list button > b { color: #1d4ed8; font-size: 17px; font-variant-numeric: tabular-nums; }
+.dashboard-result-warning { margin: 8px 0 0; color: #8a5a08; font-size: 11px; }
+.dashboard-result-detail { margin-top: 9px; font-size: 11px; color: #4b5f75; }
+.dashboard-result-detail summary { cursor: pointer; color: #31577b; font-weight: 700; }
+.dashboard-result-detail ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 4px; }
+.dashboard-result-detail li { display: grid; gap: 1px; }
+.dashboard-result-detail small { color: #7b8b9d; }

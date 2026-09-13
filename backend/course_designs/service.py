@@ -321,25 +321,32 @@ def create_design(
         value = str(requirement.get("content") or requirement.get("title") or "").strip()
         if value and value not in requirement_values.setdefault(category, []):
             requirement_values[category].append(value)
+    # 教学重点/难点是教案表格字段, 必须是一行可读短句。大纲要求原文常是整段, 先压成短句。
+    key_point_requirements = [_condense_requirement(item) for item in requirement_values.get("key_point", [])]
+    difficult_requirements = [_condense_requirement(item) for item in requirement_values.get("difficult_point", [])]
     chapter = payload.chapter or materials[primary_id].get("chapter") or ""
     session_label = (
         outline.get("session", "")
         if outline
         else (schedule.get("content", "") if schedule else "")
     )
+    # 重点三层兜底: 大纲节点标记 → 大纲要求 → 知识点前几条(绝不能为空)。
+    # 实测大纲节点常常全未标记 is_key_point, 过去会让「教学重点」在 Word 里空着。
+    if not key_points:
+        key_points = key_point_requirements or point_titles[:3] or outline_titles[:3]
+    difficult_points = difficult or key_point_requirements or key_points[1:3] or key_points[:1]
     topic = (
         outline.get("title", "") if outline else session_label
     ) or "、".join(key_points[:3]) or chapter or archive["course_title"]
-    difficult_points = difficult if outline else (difficult or key_points[1:3])
+    # 目标句优先引用知识点(而不是大纲标题), 否则会产出"准确说明 <大纲标题> 的核心概念"这类空话。
+    objective_subjects = key_points or point_titles or [topic]
     objectives = requirement_values.get("objective", [])[:20] or [
-        f"准确说明{key_points[0] if key_points else topic}的核心概念与适用边界",
-        f"结合课程材料分析{key_points[1] if len(key_points) > 1 else topic}的原理和应用",
-        "依据任务条件完成方案比较、论证与规范表达",
+        f"能说出{objective_subjects[0]}的主要特征与适用场景",
+        f"能结合课程材料分析{objective_subjects[1] if len(objective_subjects) > 1 else objective_subjects[0]}的原理",
+        "能在给定任务中按规范完成方案比较与表达",
     ]
-    if requirement_values.get("key_point"):
-        key_points = list(dict.fromkeys([*requirement_values["key_point"], *key_points]))
-    if requirement_values.get("difficult_point"):
-        difficult_points = list(dict.fromkeys([*requirement_values["difficult_point"], *difficult_points]))
+    key_points = _distinct([*key_point_requirements, *key_points], 12)
+    difficult_points = _distinct([*difficult_requirements, *difficult_points], 8)
     assessment_requirements = requirement_values.get("assessment", [])
     practice_requirements = requirement_values.get("practice", [])
     content = CourseDesignContent(
@@ -510,9 +517,21 @@ def update_design(
     status: str,
     template_document_id: str | None,
     template_material_id: str | None = None,
+    *,
+    confirm: bool = True,
 ) -> dict:
+    """保存教案。
+
+    confirm=False 表示这次保存不是"教师重新确认"（内容编排 / 同步会话 / 大纲升级），
+    内容一旦变化，之前的「教师已审核」就失效了，必须退回 draft——否则一份被改过的
+    教案仍然标着"已审核"，而它的已审核状态对应的其实是旧内容。
+    """
     next_version = record.get("version", 1) + 1
     timestamp = utc_now()
+    previous_content = record.get("content") or {}
+    content_changed = previous_content != content.model_dump()
+    if not confirm and content_changed and status == "reviewed":
+        status = "draft"
     record.update({
         "content": content.model_dump(),
         "status": status,
@@ -534,8 +553,43 @@ def update_design(
     return record
 
 
+def _condense_requirement(value: str, limit: int = 40) -> str:
+    """把大纲要求原文压成一行短句, 用于「教学重点/难点」这类表格字段。
+
+    大纲要求常常是整段原文(实测有 400+ 字未断句), 直接灌进字段会让导出 Word 无法阅读。
+    这里取首个短句作为标题, 完整原文仍保留在 source_snapshot.syllabus_requirements 里。
+    """
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    for separator in ("。", "；", ";", "！", "!", "\n"):
+        head = text.split(separator, 1)[0].strip()
+        if head:
+            text = head
+            break
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "…"
+    return text
+
+
+def _distinct(values: list[str], limit: int) -> list[str]:
+    seen: list[str] = []
+    for value in values:
+        item = str(value or "").strip()
+        if item and item not in seen:
+            seen.append(item)
+        if len(seen) >= limit:
+            break
+    return seen
+
+
 def validate_run_context(record: dict, run: dict) -> None:
-    """Reject run/design links that cannot be proven to share the same source context."""
+    """Reject run/design links that cannot be proven to share the same source context.
+
+    历史记录里 design.run_id 可能为空(2026-09 之前创建会话时没有回写), 此时若会话的
+    archive 与主文档都能在课程设计的来源链里找到, 视为同源。显式声明了其他 design_id
+    的会话仍然拒绝。
+    """
     teaching_data = run.get("teaching_data", {}) or {}
     run_archive_id = teaching_data.get("archive_id")
     run_design_id = teaching_data.get("design_id")
@@ -614,6 +668,7 @@ def sync_run(record: dict, run: dict, teacher_draft: str | None = None) -> dict:
         record.get("status", "draft"),
         record.get("template_document_id"),
         record.get("template_material_id"),
+        confirm=False,
     )
 
 
@@ -646,8 +701,13 @@ def assembly_sources(
     record: dict,
     run: dict | None = None,
     teacher_draft: str | None = None,
+    classroom: dict | None = None,
 ) -> list[dict]:
-    """Build traceable, user-selectable content blocks for the final lesson plan."""
+    """Build traceable, user-selectable content blocks for the final lesson plan.
+
+    classroom 由调用方从课堂库读取后传入（course_designs 不直接依赖 classroom 模块，
+    避免耦合；读不到时传 None，只是少两类来源，不影响其余逻辑）。
+    """
     items: list[dict] = []
     snapshot = record.get("source_snapshot") or {}
     for index, schedule in enumerate(snapshot.get("schedule") or []):
@@ -728,6 +788,70 @@ def assembly_sources(
                 f"teacher-draft:{run.get('id')}", "teacher_draft", "教师审核稿（完整）",
                 teacher_draft, "teaching_process", source_name="教师审核稿",
                 locator=f"workflow-run:{run.get('id')}:teacher-draft",
+            ))
+    # 课堂演练产物（逐页讲稿 / 督导评价）：住在独立的课堂库里，不走 teaching_data，
+    # 必须单独渲染成来源，否则教师演练出来的成果既看不见也插不进教案。
+    items.extend(_classroom_sources(classroom))
+    return items
+
+
+NL = chr(10)
+BLANK = chr(10)
+
+
+def _classroom_sources(classroom: dict | None) -> list[dict]:
+    """课堂演练产物 → 可插入内容。
+
+    两处曾经完全断开的产出：逐页讲稿（lesson_versions）与督导评价（supervisor_reports）。
+    它们住在独立的课堂库里，内容编排过去只读 teaching_data，所以教师演练完的成果
+    既看不见也插不进教案。这里把它们渲染成文本块，而不是倾倒原始嵌套结构。
+    """
+    if not classroom:
+        return []
+    items: list[dict] = []
+    for run_id, info in classroom.items():
+        if not isinstance(info, dict):
+            continue
+        title = str(info.get("title") or "课堂演练")
+        for lesson in (info.get("lessons") or [])[-3:]:
+            version = lesson.get("version_number", 1)
+            for slide in lesson.get("slides") or []:
+                parts: list[str] = []
+                ppt = slide.get("ppt_content") or {}
+                if ppt.get("title"):
+                    parts.append(str(ppt["title"]))
+                parts.extend(str(b) for b in (ppt.get("bullets") or []) if str(b).strip())
+                notes = " ".join(
+                    str(block.get("content") or "") for block in (slide.get("speaker_notes") or [])
+                ).strip()
+                if notes:
+                    parts.append("讲稿：" + notes)
+                content = NL.join(part for part in parts if part.strip())
+                if not content:
+                    continue
+                slide_id = slide.get("slide_id") or slide.get("id") or "slide"
+                items.append(_source_item(
+                    f"lesson:{lesson.get('id')}:{slide_id}", "lesson_slide",
+                    f"第 {slide.get('order', '?')} 页 · {str(slide.get('title') or '')[:40]}",
+                    content, "teaching_process",
+                    source_name=f"{title} · 课件 V{version}",
+                    locator=f"classroom:lesson-version:{lesson.get('id')}:{slide_id}",
+                ))
+        report = info.get("report")
+        if report:
+            lines = [f"综合评分：{report.get('overall_score', '')}"]
+            for key, value in (report.get("dimension_scores") or {}).items():
+                lines.append(f"{key}：{value}")
+            for label, key in (("优势", "strengths"), ("关键问题", "critical_issues"),
+                               ("改进建议", "revision_priorities")):
+                values = report.get(key) or []
+                if values:
+                    lines.append(BLANK + f"{label}：")
+                    lines.extend(f"- {item}" for item in values)
+            items.append(_source_item(
+                f"supervisor:{run_id}", "supervisor_report",
+                f"{title} · 督导评价", NL.join(lines), "postscript",
+                source_name="督导智能体", locator=f"classroom:supervisor-report:{run_id}",
             ))
     return items
 
@@ -835,6 +959,7 @@ def apply_assembly(
     return update_design(
         record, content, record.get("status", "draft"),
         record.get("template_document_id"), record.get("template_material_id"),
+        confirm=False,
     )
 
 
@@ -921,6 +1046,44 @@ def _unique_table_cells(table):
 
 def _container_has_content(container) -> bool:
     return bool(container.tables or any(paragraph.text.strip() for paragraph in container.paragraphs))
+
+
+REVIEWED_REQUIRED_FIELDS = ("教学目标", "知识点", "教学过程")
+
+
+def review_blockers(content: CourseDesignContent) -> list[str]:
+    """切到「教师已审核」时必须具备的内容。
+
+    只校验真正决定教案成立与否的三项；班级/地点/思政/后记等本来就允许留空，
+    把它们也设成必填会把"确认"变成走过场。
+    """
+    checks = {
+        "教学目标": content.objectives,
+        "知识点": content.knowledge_points,
+        "教学过程": content.teaching_process,
+    }
+    return [label for label in REVIEWED_REQUIRED_FIELDS
+            if not (checks[label] if isinstance(checks[label], str) else any(checks[label]))]
+
+
+def _pending_content_fields(content: CourseDesignContent) -> list[str]:
+    """导出前找出仍是空白的教案字段。
+
+    空字段在 Word 里会被写成「待教师完善」, 教师需要先知道哪些没填, 而不是导出后才发现。
+    """
+    checks = [
+        ("教学目标", content.objectives),
+        ("知识点", content.knowledge_points),
+        ("教学重点", content.key_points),
+        ("教学难点", content.difficult_points),
+        ("教学方法", content.methods),
+        ("教学手段", content.tools),
+        ("教学过程", content.teaching_process),
+        ("评价设计", content.assessment),
+        ("课程思政", content.ideological_elements),
+        ("教学后记", content.postscript),
+    ]
+    return [label for label, value in checks if not (value if isinstance(value, str) else any(value))]
 
 
 def _template_values(content: CourseDesignContent) -> dict[str, str]:

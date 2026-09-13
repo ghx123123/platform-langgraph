@@ -5,7 +5,13 @@ from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 ReferenceLayer = Literal["original", "extracted", "structured", "generated"]
 DesignStatus = Literal["draft", "reviewed"]
-AssemblySourceKind = Literal["schedule", "syllabus", "knowledge_outline", "teacher_message", "teacher_draft", "ideological", "custom"]
+AssemblySourceKind = Literal[
+    "schedule", "syllabus", "knowledge_outline", "teacher_message", "teacher_draft",
+    "ideological", "custom",
+    # 课堂演练产物：逐页讲稿与督导评价。旧版这些内容只存在于课堂库，
+    # 内容编排根本读不到，教师辛苦演练出来的讲稿无法进教案。
+    "lesson_slide", "supervisor_report",
+]
 AssemblyTargetField = Literal[
     "session_label", "objectives", "knowledge_points", "key_points", "difficult_points",
     "methods", "tools", "ideological_elements", "teaching_process", "assessment", "postscript",
@@ -131,6 +137,8 @@ class CourseDesignAssemblySourceList(BaseModel):
     design_id: str
     run_id: str | None = None
     items: list[CourseDesignAssemblySource] = Field(default_factory=list)
+    # 课堂库不可用等降级原因；教师需要知道"少了两类来源"而不是以为本来就没有
+    warning: str | None = None
 
 
 class CourseDesignAssemblyApply(BaseModel):
@@ -232,6 +240,8 @@ class CourseDesignTemplateInspection(BaseModel):
     table_count: int = Field(default=0, ge=0)
     header_count: int = Field(default=0, ge=0)
     footer_count: int = Field(default=0, ge=0)
+    # 导出前提醒: 空字段会在 Word 里显示为「待教师完善」, 教师应先在教案定稿里补齐。
+    pending_fields: list[str] = Field(default_factory=list)
     message: str = ""
 
 

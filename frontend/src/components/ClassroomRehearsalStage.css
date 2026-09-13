@@ -1,0 +1,449 @@
+.classroom-rehearsal {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+.classroom-rehearsal-stage {
+  display: grid;
+  grid-template-columns: minmax(520px, 1fr) 8px var(--classroom-detail-width);
+  min-width: 0;
+  height: clamp(440px, 50vh, 540px);
+  overflow: hidden;
+  border: 1px solid #cbd7e2;
+  border-radius: 8px;
+  background: #e4eaf0;
+}
+.classroom-rehearsal-stage > .classroom-scene-card,
+.classroom-rehearsal-stage > .classroom-scene-card > .classroom-scene-canvas {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+.classroom-detail-resizer {
+  position: relative;
+  z-index: 4;
+  cursor: col-resize;
+  background: #d6dfe8;
+  touch-action: none;
+}
+.classroom-detail-resizer:after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 3px;
+  height: 42px;
+  border-inline: 1px solid #8fa1b3;
+  transform: translateY(-50%);
+}
+.classroom-detail-resizer:focus-visible {
+  outline: 2px solid #2f78cb;
+  outline-offset: -2px;
+}
+.classroom-teaching-detail {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  overflow: auto;
+  padding: 9px;
+  background: #f7f9fb;
+  gap: 8px;
+}
+.classroom-teaching-detail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.classroom-teaching-detail > header > div {
+  display: grid;
+  gap: 2px;
+}
+.classroom-teaching-detail > header span {
+  color: #3572aa;
+  font-size: 10px;
+  font-weight: 800;
+}
+.classroom-teaching-detail > header strong {
+  font-size: 11px;
+}
+.classroom-teaching-detail nav {
+  display: flex;
+  gap: 4px;
+}
+.classroom-teaching-detail nav button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #cbd6e1;
+  border-radius: 4px;
+  background: #fff;
+  color: #314a65;
+  cursor: pointer;
+}
+.classroom-teaching-detail nav button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.classroom-agent-detail {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #d7e0e9;
+  border-radius: 6px;
+  background: #fff;
+}
+.classroom-agent-detail > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 11px;
+  border-bottom: 1px solid #e6ebf0;
+}
+.agent-detail-avatar {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  border-radius: 6px;
+  background: #2e6fae;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+.agent-detail-avatar.student-high {
+  background: #2b887c;
+}
+.agent-detail-avatar.student-medium {
+  background: #bf6e31;
+}
+.agent-detail-avatar.student-low {
+  background: #b74f63;
+}
+.agent-detail-avatar.supervisor {
+  background: #7656b4;
+}
+.classroom-agent-detail > header > div {
+  display: grid;
+  gap: 1px;
+}
+.classroom-agent-detail > header strong {
+  font-size: 11px;
+}
+.classroom-agent-detail > header small {
+  color: #7e8c9c;
+  font-size: 10px;
+}
+.agent-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 11px;
+  color: #536980;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.agent-task svg {
+  flex: none;
+  color: #3979b6;
+}
+.agent-task span {
+  white-space: pre-wrap;
+}
+.agent-task b,
+.agent-public-event b {
+  display: block;
+  margin-bottom: 3px;
+  color: #263b55;
+  font-size: 10px;
+}
+.agent-public-event {
+  margin: 0 10px 10px;
+  padding: 8px;
+  border-left: 3px solid #77a5cd;
+  background: #edf5fc;
+  color: #3e5570;
+  font-size: 10px;
+}
+.agent-public-event p {
+  margin: 3px 0 0;
+  line-height: 1.55;
+}
+.student-public-state {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 10px 9px;
+}
+.student-public-state > div {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid #dde5ed;
+  border-radius: 5px;
+  background: #f7f9fb;
+}
+.student-public-state span {
+  color: #7c8998;
+  font-size: 10px;
+}
+.student-public-state strong {
+  color: #30475f;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.student-misconceptions {
+  margin: 0 10px 9px;
+  padding: 8px 9px;
+  border: 1px solid #ecd9b4;
+  border-left: 3px solid #c48a2f;
+  border-radius: 5px;
+  background: #fffaf0;
+}
+.student-misconceptions b {
+  color: #855d20;
+  font-size: 10px;
+}
+.student-misconceptions p {
+  margin: 4px 0 0;
+  color: #67563d;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1180px) {
+  .classroom-rehearsal-stage {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+  .classroom-detail-resizer {
+    display: none;
+  }
+  .classroom-rehearsal-stage > .classroom-scene-card,
+  .classroom-rehearsal-stage > .classroom-scene-card > .classroom-scene-canvas {
+    height: 540px;
+  }
+  .classroom-teaching-detail {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+    grid-template-rows: auto auto;
+  }
+  .classroom-teaching-detail > header {
+    grid-column: 1/-1;
+  }
+  .classroom-agent-detail {
+    height: auto;
+  }
+}
+@media (max-width: 720px) {
+  .classroom-rehearsal-stage > .classroom-scene-card,
+  .classroom-rehearsal-stage > .classroom-scene-card > .classroom-scene-canvas {
+    height: 420px;
+  }
+  .classroom-teaching-detail {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .classroom-teaching-detail > header {
+    grid-column: auto;
+  }
+}
+
+/* Director-view classroom: stage, synchronized deck and live group chat share
+   one equal-height workbench.  This mirrors the approved standalone preview
+   instead of stacking unrelated cards below the 3D scene. */
+.classroom-rehearsal-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 12px;
+  border: 1px solid #d8e1ea;
+  border-radius: 7px;
+  background: #fff;
+}
+.classroom-rehearsal-summary > div { display: grid; gap: 2px; min-width: 0; }
+.classroom-rehearsal-summary > div strong { color: #1b293c; font-size: 13px; }
+.classroom-rehearsal-summary > div span { overflow: hidden; color: #718096; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.classroom-rehearsal-summary dl { display: flex; flex: none; gap: 5px; margin: 0; }
+.classroom-rehearsal-summary dl div { min-width: 104px; padding: 6px 9px; border-left: 2px solid #cad9e8; background: #f4f7fa; }
+.classroom-rehearsal-summary dt { color: #77869a; font-size: 10px; font-weight: 800; }
+.classroom-rehearsal-summary dd { margin: 1px 0 0; color: #1d2b3e; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.classroom-rehearsal-controls { display: flex; flex: none; gap: 6px; }
+.classroom-rehearsal-controls button { min-width: 54px; min-height: 36px; border: 1px solid #ccd8e4; border-radius: 5px; background: #fff; color: #30475f; font-size: 10px; font-weight: 700; }
+.classroom-rehearsal-controls button:disabled { cursor: not-allowed; opacity: .4; }
+
+.classroom-rehearsal-stage {
+  display: grid;
+  grid-template-columns: minmax(500px, 1.15fr) minmax(360px, .76fr) 8px var(--classroom-detail-width);
+  height: clamp(650px, calc(100dvh - 255px), 850px);
+  min-height: 650px;
+  overflow: hidden;
+  background: #e6ebf0;
+}
+.classroom-scene-column {
+  grid-column: 1;
+  display: grid;
+  grid-template-rows: minmax(390px, 1fr) 216px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid #cbd7e2;
+}
+.classroom-scene-column > .classroom-scene-card,
+.classroom-scene-column > .classroom-scene-card > .classroom-scene-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+.classroom-scene-evidence {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 11px 14px 9px;
+  border-top: 3px solid #7054b7;
+  background: #13213a;
+  color: #dce7f4;
+}
+.classroom-scene-evidence header { display: flex; align-items: center; gap: 8px; }
+.classroom-scene-evidence header span { padding: 3px 7px; border-radius: 4px; background: #7054b7; color: #fff; font-size: 10px; font-weight: 800; }
+.classroom-scene-evidence header strong { font-size: 10px; }
+.classroom-scene-evidence ul { display: grid; gap: 3px; margin: 7px 0; padding: 0; list-style: none; color: #bdcce0; font-size: 10px; }
+.classroom-scene-evidence li::before { content: ""; display: inline-block; width: 4px; height: 4px; margin: 0 7px 2px 0; border-radius: 50%; background: #8063ce; }
+.classroom-scene-evidence > div { padding-top: 7px; border-top: 1px solid rgba(255,255,255,.12); }
+.classroom-scene-evidence > div b { color: #f1f5fa; font-size: 10px; }
+.classroom-scene-evidence > div p { margin: 4px 0 0; color: #d3dfed; font-size: 10px; line-height: 1.55; }
+.classroom-scene-evidence > small { margin-top: 7px; color: #7f91aa; font-size: 10px; }
+
+.classroom-detail-resizer { grid-column: 3; grid-row: 1; }
+.classroom-teaching-detail {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-rows: auto minmax(220px, 1fr) auto auto minmax(170px, .72fr);
+  gap: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border-right: 1px solid #d4dde6;
+  background: #edf2f6;
+}
+.classroom-teaching-detail > header { min-height: 58px; padding: 10px 12px; border-bottom: 1px solid #d9e2ea; background: #fff; }
+.classroom-teaching-detail > .lesson-slide-canvas { align-self: center; margin: 16px 14px; width: calc(100% - 28px); }
+.classroom-teaching-detail > .classroom-agent-detail {
+  display: block;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid #dbe3eb;
+  background: #fff;
+}
+.agent-selector {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 7px 8px;
+  border-bottom: 1px solid #e7edf2;
+  background: #f5f8fb;
+}
+.agent-selector button {
+  display: grid;
+  min-width: 72px;
+  justify-items: center;
+  gap: 3px;
+  padding: 4px 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #52667d;
+  font-size: 10px;
+  cursor: pointer;
+}
+.agent-selector button:hover { background: #eaf1f7; }
+.agent-selector button.active { border-color: #3b7fc4; background: #e4f0fb; color: #234e75; }
+.agent-selector button i { color: #26775e; font-size: 10px; font-style: normal; font-weight: 800; }
+.agent-selector .agent-detail-avatar { width: 24px; height: 24px; font-size: 10px; }
+.agent-understanding {
+  margin: 8px 10px;
+  padding: 8px 9px;
+  border-left: 3px solid #397cc0;
+  background: #edf5fc;
+}
+.agent-understanding span { color: #37638a; font-size: 10px; font-weight: 800; }
+.agent-understanding p { margin: 4px 0 0; color: #405870; font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
+.agent-identity { margin: 0 10px 8px; padding: 7px 9px; border: 1px solid #e1e8ef; background: #fafcfe; }
+.agent-identity span { color: #74879a; font-size: 10px; font-weight: 800; }
+.agent-identity p { margin: 3px 0 0; color: #51677d; font-size: 10px; line-height: 1.45; }
+.agent-history { margin: 0 10px 10px; border: 1px solid #dbe4ec; background: #fbfcfd; }
+.agent-history > header { display: flex; align-items: center; gap: 5px; padding: 7px 8px; border-bottom: 1px solid #e7edf2; }
+.agent-history > header strong { color: #30475f; font-size: 10px; }
+.agent-history > header span { margin-left: auto; color: #7f8d9c; font-size: 10px; }
+.agent-history ol { display: grid; gap: 5px; margin: 0; padding: 7px 8px 8px 24px; max-height: 190px; overflow: auto; }
+.agent-history li { padding: 5px 6px; border-left: 2px solid #d8e1ea; }
+.agent-history li.current { border-left-color: #2d7d62; background: #f0f8f4; }
+.agent-history li > div { display: flex; gap: 5px; align-items: baseline; }
+.agent-history li b { color: #587493; font-size: 10px; }
+.agent-history li time { color: #8c99a7; font-size: 10px; }
+.agent-history li p { margin: 3px 0 0; color: #40556b; font-size: 10px; line-height: 1.45; }
+.agent-history-empty { margin: 0; padding: 9px; color: #8a98a7; font-size: 10px; }
+.classroom-live-delivery { min-height: 86px; padding: 10px 12px; border-top: 1px solid #dbe3eb; background: #fff; }
+.classroom-live-delivery header { display: flex; justify-content: space-between; color: #2c70ad; font-size: 10px; font-weight: 800; }
+.classroom-live-delivery time { color: #8592a1; font-weight: 500; }
+.classroom-live-delivery p { margin: 5px 0 0; color: #40536a; font-size: 10px; line-height: 1.55; }
+.classroom-slide-progress { display: grid; grid-template-columns: 36px 44px minmax(0,1fr) 36px; align-items: center; gap: 6px; min-height: 50px; padding: 7px 10px; border-top: 1px solid #dbe3eb; background: #fff; }
+.classroom-slide-progress button { display: grid; width: 36px; height: 34px; place-items: center; border: 1px solid #cfdae5; border-radius: 5px; background: #fff; color: #304963; }
+.classroom-slide-progress button:disabled { opacity: .35; }
+.classroom-slide-progress span { color: #53677e; font-size: 10px; text-align: center; }
+.classroom-slide-progress i { height: 5px; overflow: hidden; border-radius: 999px; background: #dfe7ee; }
+.classroom-slide-progress i b { display: block; width: 100%; height: 100%; background: #2f8066; transform-origin: left; transition: transform .22s ease; }
+.classroom-rehearsal-stage > .classroom-chat {
+  grid-column: 4;
+  grid-row: 1;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.classroom-rehearsal-stage > .classroom-chat .classroom-chat-log { max-height: none; min-height: 0; }
+
+@media (max-width: 1450px) {
+  .classroom-rehearsal-stage { grid-template-columns: minmax(440px, 1fr) minmax(330px, .72fr) 7px minmax(330px, var(--classroom-detail-width)); }
+}
+@media (max-width: 1180px) {
+  .classroom-rehearsal-stage { grid-template-columns: minmax(0, 1fr) minmax(330px, .75fr); grid-template-rows: 620px minmax(520px, auto); height: auto; }
+  .classroom-scene-column { grid-column: 1; grid-row: 1; }
+  .classroom-teaching-detail { grid-column: 2; grid-row: 1; }
+  .classroom-detail-resizer { display: none; }
+  .classroom-rehearsal-stage > .classroom-chat { grid-column: 1/-1; grid-row: 2; min-height: 520px; }
+}
+@media (max-width: 760px) {
+  .classroom-rehearsal-summary { align-items: flex-start; flex-direction: column; }
+  .classroom-rehearsal-summary dl { width: 100%; overflow-x: auto; }
+  .classroom-rehearsal-summary dl div { flex: 1; }
+  .classroom-rehearsal-stage { display: flex; min-height: 0; flex-direction: column; }
+  .classroom-scene-column { min-height: 620px; }
+  .classroom-teaching-detail { min-height: 560px; }
+  .classroom-rehearsal-stage > .classroom-chat { min-height: 560px; }
+}
+
+/* 课堂右栏宽度仅约 341px，16:9 会把画布压到 192px 高，而内容实际需要 323px
+   —— 一半以上的 PPT 文案被裁掉（实测 kicker 可见、正文只露前两条）。
+   嵌入式预览改为内容驱动高度，不再强制 16:9。 */
+.classroom-teaching-detail > .lesson-slide-canvas { aspect-ratio: auto; overflow: visible; }
+.classroom-teaching-detail > .lesson-slide-canvas .lesson-slide-content {
+  position: static;
+  padding: 12px 13px 14px;
+}
+.classroom-teaching-detail > .lesson-slide-canvas h3 { max-width: 100%; margin: 6px 0 10px; }
+.classroom-teaching-detail > .lesson-slide-canvas ul { width: 100%; gap: 6px; }
+.classroom-teaching-detail > .lesson-slide-canvas aside { width: 100%; align-self: stretch; margin-top: 10px; }
+.classroom-teaching-detail > .lesson-slide-canvas pre {
+  position: static; max-width: 100%; max-height: none; margin: 10px 0 0; padding: 8px 9px;
+}
+.classroom-teaching-detail > .lesson-slide-canvas footer { position: static; margin-top: 10px; }
+.classroom-teaching-detail > .lesson-slide-canvas .lesson-slide-accent { border-radius: 6px 0 0 6px; }

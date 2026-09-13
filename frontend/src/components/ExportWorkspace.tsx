@@ -50,6 +50,8 @@ const fieldLabels: Record<string, string> = {
   ideological_elements: '课程思政', teaching_process: '教学过程', assessment: '评价设计', postscript: '教学后记',
 };
 const sourceKindLabels: Record<CourseDesignAssemblySourceKind, string> = {
+  lesson_slide: '课堂讲稿',
+  supervisor_report: '督导评价',
   schedule: '进度表', syllabus: '教学大纲', knowledge_outline: '知识大纲', teacher_message: '教师智能体',
   teacher_draft: '教师审核稿', ideological: '思政建议', custom: '教师填写',
 };
@@ -64,8 +66,12 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
   const [templateDocumentId, setTemplateDocumentId] = useState<string | null>(design?.template_document_id || null);
   const [templateName, setTemplateName] = useState('内置标准教案模板');
   const [templateQuery, setTemplateQuery] = useState('');
+  // 空串 = 教师显式选择「仅使用进度表、大纲和知识范围」。此时若后端仍回退到
+  // design.run_id，就会把某个历史会话的教师内容混进可选来源并写回绑定关系。
   const [runId, setRunId] = useState(design?.run_id || '');
+  const assemblyRunId = (value: string) => (value ? value : null);
   const [assemblySources, setAssemblySources] = useState<CourseDesignAssemblySource[]>([]);
+  const [assemblyWarning, setAssemblyWarning] = useState('');
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [sourceKind, setSourceKind] = useState<'all' | CourseDesignAssemblySourceKind>('all');
   const [assemblyTarget, setAssemblyTarget] = useState<CourseDesignAssemblyTarget>('teaching_process');
@@ -76,7 +82,7 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
   const [inspection, setInspection] = useState<CourseDesignTemplateInspection | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [exports, setExports] = useState<CourseDesignExportRecord[]>(design?.exports || []);
-  const [busy, setBusy] = useState<'save' | 'sync' | 'template' | 'export' | 'source' | 'rebind' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'sync' | 'template' | 'export' | 'source' | 'rebind' | 'design' | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -125,6 +131,15 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
   });
   const visibleAssemblySources = sourceKind === 'all' ? assemblySources : assemblySources.filter((item) => item.kind === sourceKind);
   const assemblyPreview = assemblySources.find((item) => item.id === assemblyPreviewId);
+  const runOptionLabel = (run: WorkflowRun) => {
+    const score = (run.review as { score?: number } | null | undefined)?.score;
+    const when = run.updated_at || run.created_at;
+    const date = when ? new Date(when) : null;
+    const stamp = date && !Number.isNaN(date.getTime())
+      ? `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+      : '未知时间';
+    return `${stamp}${typeof score === 'number' ? ` · 综合评分 ${score}` : ''} · ${run.objective}`;
+  };
   const setField = <K extends keyof CourseDesignContent>(key: K, value: CourseDesignContent[K]) => setContent((current) => current ? { ...current, [key]: value } : current);
 
   const save = async (nextStatus = status): Promise<CourseDesignRecord | null> => {
@@ -141,7 +156,10 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
     if (!design || !runId) return;
     setBusy('sync'); setError(''); setMessage('');
     try { const updated = await courseDesignApi.syncRun(design.id, runId); onUpdated(updated); setMessage('已引用所选多智能体成果并生成新版本'); }
-    catch (reason) { setError(getErrorMessage(reason)); }
+    catch (reason) {
+      // 过去这里静默失败, 教师点了没反应也不知道原因。同源校验失败要明确说出来。
+      setError(`${getErrorMessage(reason)}（若会话与当前课程设计不同源，请改选下方列出的已完成会话）`);
+    }
     finally { setBusy(null); }
   };
 
@@ -149,8 +167,10 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
     if (!design) return;
     setAssemblyLoading(true); setError('');
     try {
-      const result = await courseDesignApi.assemblySources(design.id, selectedRunId || undefined);
-      setAssemblySources(result.items); setSelectedSourceIds([]); setAssemblyPreviewId(result.items[0]?.id || '');
+      // 空串代表下拉框的「仅使用进度表、大纲和知识范围」；必须传 null 让后端不要回退到
+      // design.run_id，否则该选项仍会混入某个历史会话的教师内容。
+      const result = await courseDesignApi.assemblySources(design.id, assemblyRunId(selectedRunId));
+      setAssemblySources(result.items); setAssemblyWarning(result.warning || ''); setSelectedSourceIds([]); setAssemblyPreviewId(result.items[0]?.id || '');
       if (announce) setMessage(`已读取 ${result.items.length} 项可插入内容`);
     } catch (reason) { setAssemblySources([]); setError(getErrorMessage(reason)); }
     finally { setAssemblyLoading(false); }
@@ -180,7 +200,7 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
       }
       const updated = await courseDesignApi.applyAssembly(current.id, {
         base_version: current.version, source_ids: selectedSourceIds, target_field: assemblyTarget, mode: assemblyMode,
-      }, runId || undefined);
+      }, assemblyRunId(runId));
       onUpdated(updated); setSelectedSourceIds([]);
       setMessage(`已插入到“${fieldLabels[assemblyTarget]}”，保存为第 ${updated.version} 版`);
     } catch (reason) { setError(getErrorMessage(reason)); }
@@ -248,6 +268,19 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
     finally { setBusy(null); }
   };
 
+  /** 删除一份课程设计稿（连带清理它的导出文档）。被资料单元大纲版本引用时后端返回 409。 */
+  const deleteDesign = async (item: CourseDesignSummary) => {
+    if (!window.confirm(`删除课程设计稿“${item.title}”？该设计的导出记录与文件会一并清理；资料库原件和模板不受影响。`)) return;
+    setBusy('design'); setError(''); setMessage('');
+    try {
+      await courseDesignApi.delete(item.id);
+      setMessage(`已删除课程设计稿“${item.title}”`);
+      await onRefresh();
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+    } finally { setBusy(null); }
+  };
+
   const deleteExport = async (item: CourseDesignExportRecord) => {
     if (!design || !window.confirm(`从平台删除导出成果“${item.filename}”？课程设计、资料库原件和模板不会被删除。`)) return;
     setError(''); setMessage('');
@@ -285,7 +318,7 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
       <div className="export-columns">
         <aside className="export-list">
           <div className="export-section-title"><span>课程设计稿</span><button type="button" onClick={onRefresh} title="刷新设计稿" aria-label="刷新设计稿"><RefreshCw size={14} /></button></div>
-          <div className="design-record-list">{designs.map((item) => <button type="button" key={item.id} className={item.id === design.id ? 'active' : ''} onClick={() => onSelect(item.id)}><FileText size={14} /><span><strong>{item.title}</strong><small>第 {item.version} 版 · {item.source_count} 条引用 · {item.export_count || 0} 次导出</small></span>{item.status === 'reviewed' && <Check size={13} />}</button>)}</div>
+          <div className="design-record-list">{designs.map((item) => <div className={`design-record${item.id === design.id ? ' active' : ''}`} key={item.id}><button type="button" className="design-record-open" onClick={() => onSelect(item.id)}><FileText size={14} /><span><strong>{item.title}</strong><small>第 {item.version} 版 · {item.source_count} 条引用 · {item.export_count || 0} 次导出</small></span>{item.status === 'reviewed' && <Check size={13} />}</button><button type="button" className="design-record-delete" title="删除该课程设计稿" aria-label={`删除${item.title}`} disabled={busy === 'design'} onClick={() => void deleteDesign(item)}><Trash2 size={13} /></button></div>)}</div>
           <div className="export-jump"><button type="button" onClick={onGoMaterials}><Archive size={14} />返回资料整理</button><button type="button" onClick={onGoDesign}><FileInput size={14} />返回课程设计</button></div>
         </aside>
 
@@ -304,15 +337,18 @@ export function ExportWorkspace({ designs, design, runs, loading, onSelect, onUp
         <aside className="export-config">
           <section className="assembly-panel">
             <div className="export-section-title"><span>内容编排</span><ListPlus size={14} /></div>
-            <label className="assembly-label">多智能体会话<select value={runId} onChange={(event) => { setRunId(event.target.value); void loadAssemblySources(event.target.value); }}><option value="">仅使用进度表、大纲和知识范围</option>{completedRuns.map((run) => <option key={run.id} value={run.id}>{run.objective}</option>)}</select></label>
-            <div className="assembly-actions"><button type="button" className="secondary-button" disabled={!runId || !!busy} onClick={() => void syncRun()}><RefreshCw size={14} />整体同步框架</button><button type="button" className="secondary-button" disabled={assemblyLoading} onClick={() => void loadAssemblySources()}>{assemblyLoading ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}刷新内容</button></div>
-            <div className="assembly-kinds"><button type="button" className={sourceKind === 'all' ? 'active' : ''} onClick={() => setSourceKind('all')}>全部</button>{(['schedule', 'syllabus', 'knowledge_outline', 'teacher_message', 'teacher_draft', 'ideological'] as CourseDesignAssemblySourceKind[]).filter((kind) => assemblySources.some((item) => item.kind === kind)).map((kind) => <button type="button" className={sourceKind === kind ? 'active' : ''} key={kind} onClick={() => setSourceKind(kind)}>{sourceKindLabels[kind]}</button>)}</div>
+            <label className="assembly-label">多智能体会话<select value={runId} onChange={(event) => { setRunId(event.target.value); void loadAssemblySources(event.target.value); }}><option value="">仅使用进度表、大纲和知识范围</option>{completedRuns.map((run) => <option key={run.id} value={run.id}>{runOptionLabel(run)}</option>)}</select></label>
+            {completedRuns.length > 0 && !runId && <small className="assembly-hint">本课程设计有 {completedRuns.length} 个已完成会话可同步；选择后点「整体同步框架」把成果写入教案。</small>}
+            <div className="assembly-actions"><button type="button" className="secondary-button" disabled={!runId || !!busy} onClick={() => { if (window.confirm('将用所选会话的多智能体成果覆盖教案中的目标、重难点、方法、教学过程与评价设计（教学后记不受影响）。当前内容会存为旧版本，但界面暂不提供回滚入口。确认同步？')) void syncRun(); }}><RefreshCw size={14} />整体同步框架</button><button type="button" className="secondary-button" disabled={assemblyLoading} onClick={() => void loadAssemblySources()}>{assemblyLoading ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}刷新内容</button></div>
+            <div className="assembly-kinds"><button type="button" className={sourceKind === 'all' ? 'active' : ''} onClick={() => setSourceKind('all')}>全部</button>{(['schedule', 'syllabus', 'knowledge_outline', 'lesson_slide', 'supervisor_report', 'teacher_message', 'teacher_draft', 'ideological'] as CourseDesignAssemblySourceKind[]).filter((kind) => assemblySources.some((item) => item.kind === kind)).map((kind) => <button type="button" className={sourceKind === kind ? 'active' : ''} key={kind} onClick={() => setSourceKind(kind)}>{sourceKindLabels[kind]}</button>)}</div>
+            {assemblyWarning && <small className="assembly-warning">{assemblyWarning}</small>}
             <div className="assembly-source-list">{assemblyLoading ? <div className="assembly-empty"><Loader2 className="spin" size={15} />正在读取来源</div> : visibleAssemblySources.length ? visibleAssemblySources.map((item) => <label key={item.id} className={`${selectedSourceIds.includes(item.id) ? 'selected' : ''} ${assemblyPreviewId === item.id ? 'previewing' : ''}`}><input type="checkbox" checked={selectedSourceIds.includes(item.id)} onChange={() => toggleAssemblySource(item)} /><span onClick={() => setAssemblyPreviewId(item.id)}><strong>{item.title}</strong><small>{sourceKindLabels[item.kind]} · 建议插入{fieldLabels[item.default_target]}</small></span></label>) : <div className="assembly-empty">当前范围没有这一类可插入内容</div>}</div>
             {assemblyPreview && <div className="assembly-preview"><strong>{assemblyPreview.title}</strong><p>{assemblyPreview.content}</p><small>{assemblyPreview.source_name} · {assemblyPreview.locator}</small></div>}
             <div className="assembly-destination"><label>插入到<select value={assemblyTarget} onChange={(event) => setAssemblyTarget(event.target.value as CourseDesignAssemblyTarget)}>{assemblyTargets.map((target) => <option key={target} value={target}>{fieldLabels[target]}</option>)}</select></label><label>处理方式<select value={assemblyMode} onChange={(event) => setAssemblyMode(event.target.value as typeof assemblyMode)}><option value="append">追加到现有内容后</option><option value="prepend">插入到现有内容前</option><option value="replace">替换该区域</option></select></label></div>
             <button type="button" className="primary-button compact full" disabled={selectedSourceIds.length === 0 || !!busy} onClick={() => void applyAssemblySources()}>{busy === 'sync' ? <Loader2 className="spin" size={14} /> : <ListPlus size={14} />}插入所选 {selectedSourceIds.length || ''} 项内容</button>
           </section>
-          <section className="template-panel"><div className="export-section-title"><span>Word 模板</span><FileOutput size={14} /></div><input className="template-search" value={templateQuery} onChange={(event) => setTemplateQuery(event.target.value)} placeholder={`搜索 ${templateMaterials.length} 份资料库模板`} /><select value={templateMaterialId} disabled={busy === 'template'} onChange={(event) => void selectTemplateMaterial(event.target.value)}><option value="">内置标准教案模板</option>{filteredTemplateMaterials.map((item) => <option key={item.id} value={item.id}>{templateOptionLabel(item)}</option>)}</select><input ref={templateInput} className="visually-hidden" type="file" accept=".docx" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadTemplate(file); event.target.value = ''; }} /><button type="button" className="secondary-button full" disabled={!!busy} onClick={() => templateInput.current?.click()}>{busy === 'template' ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}{busy === 'template' ? '正在加载模板原件' : '上传其他 DOCX 模板'}</button><small className="template-name">当前：{templateName}</small>{inspectionLoading ? <div className="template-inspection checking"><Loader2 className="spin" size={15} /><span><strong>正在检查模板</strong><small>识别表格、正文、页眉和页脚中的填充位置</small></span></div> : inspection && <div className={`template-inspection ${inspection.compatible ? 'compatible' : 'incompatible'}`}>{inspection.compatible ? <ShieldCheck size={17} /> : <AlertTriangle size={17} />}<span><strong>{inspection.template_mode === 'source-template' ? inspection.compatible ? '可保持原格式导出' : '无法按原格式填充' : '内置模板字段完整'}</strong><small>{inspection.message}</small></span>{inspection.template_mode === 'source-template' && <div className="template-fields"><span>{inspection.matched_fields.length} 类字段</span><span>{inspection.table_count} 个表格</span><span>{inspection.header_count + inspection.footer_count} 个页眉页脚</span></div>}{inspection.matched_fields.length > 0 && <p>{inspection.matched_fields.slice(0, 8).map((item) => fieldLabels[item] || item).join('、')}{inspection.matched_fields.length > 8 ? '等' : ''}</p>}{!inspection.compatible && <button type="button" onClick={() => { setTemplateMaterialId(''); setTemplateDocumentId(null); setTemplateName('内置标准教案模板'); }}>改用内置标准模板</button>}</div>}</section>
+          <section className="template-panel"><div className="export-section-title"><span>Word 模板</span><FileOutput size={14} /></div><input className="template-search" value={templateQuery} onChange={(event) => setTemplateQuery(event.target.value)} placeholder={`搜索 ${templateMaterials.length} 份资料库模板`} /><select value={templateMaterialId} disabled={busy === 'template'} onChange={(event) => void selectTemplateMaterial(event.target.value)}><option value="">内置标准教案模板</option>{filteredTemplateMaterials.map((item) => <option key={item.id} value={item.id}>{templateOptionLabel(item)}</option>)}</select><input ref={templateInput} className="visually-hidden" type="file" accept=".docx" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadTemplate(file); event.target.value = ''; }} /><button type="button" className="secondary-button full" disabled={!!busy} onClick={() => templateInput.current?.click()}>{busy === 'template' ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}{busy === 'template' ? '正在加载模板原件' : '上传其他 DOCX 模板'}</button><small className="template-name">当前：{templateName}</small>
+            {!!(inspection?.pending_fields?.length) && <div className="template-pending"><AlertTriangle size={15} /><span><strong>{inspection!.pending_fields!.length} 个字段还没填</strong><small>{inspection!.pending_fields!.join('、')}</small><small>导出后这些位置会写成「待教师完善」，可先在左侧补齐再导出。</small></span></div>}{inspectionLoading ? <div className="template-inspection checking"><Loader2 className="spin" size={15} /><span><strong>正在检查模板</strong><small>识别表格、正文、页眉和页脚中的填充位置</small></span></div> : inspection && <div className={`template-inspection ${inspection.compatible ? 'compatible' : 'incompatible'}`}>{inspection.compatible ? <ShieldCheck size={17} /> : <AlertTriangle size={17} />}<span><strong>{inspection.template_mode === 'source-template' ? inspection.compatible ? '可保持原格式导出' : '无法按原格式填充' : '内置模板字段完整'}</strong><small>{inspection.message}</small></span>{inspection.template_mode === 'source-template' && <div className="template-fields"><span>{inspection.matched_fields.length} 类字段</span><span>{inspection.table_count} 个表格</span><span>{inspection.header_count + inspection.footer_count} 个页眉页脚</span></div>}{inspection.matched_fields.length > 0 && <p>{inspection.matched_fields.slice(0, 8).map((item) => fieldLabels[item] || item).join('、')}{inspection.matched_fields.length > 8 ? '等' : ''}</p>}{!inspection.compatible && <button type="button" onClick={() => { setTemplateMaterialId(''); setTemplateDocumentId(null); setTemplateName('内置标准教案模板'); }}>改用内置标准模板</button>}</div>}</section>
           <section className="export-history"><div className="export-section-title"><span>导出成果</span><em>{exports.length}</em></div>{exports.length ? <div>{exports.slice().reverse().map((item) => <article key={item.id}><FileOutput size={15} /><span><strong title={item.filename}>{item.filename}</strong><small>设计 v{item.design_version} · {item.template_name}</small><small>{formatExportTime(item.created_at)} · {(item.size / 1024).toFixed(1)} KB</small></span><div><a href={item.preview_url} target="_blank" rel="noreferrer" title="原页预览" aria-label={`预览${item.filename}`}><Eye size={14} /></a><a href={item.download_url} title="下载 Word" aria-label={`下载${item.filename}`}><Download size={14} /></a><button type="button" onClick={() => void deleteExport(item)} title="删除导出记录" aria-label={`删除${item.filename}`}><Trash2 size={14} /></button></div></article>)}</div> : <p className="export-history-empty">尚未导出。导出后会保存设计版本、模板来源和可预览 Word。</p>}</section>
           <section className="source-chain"><div className="export-section-title"><span>数据引用链</span><em>{design.source_references.length}</em></div><div className="source-list">{design.source_references.map((reference) => <button type="button" key={reference.id} className={sourceDetail?.reference.id === reference.id ? 'active' : ''} onClick={() => void inspectSource(reference.id)}><span className={`source-layer layer-${reference.layer}`}>{layerLabels[reference.layer]}</span><strong>{reference.source_name}</strong><small>{reference.locator}</small>{reference.character_count > 0 && <em>{reference.character_count.toLocaleString()} 字</em>}</button>)}</div></section>
           {busy === 'source' && <div className="source-preview"><Loader2 className="spin" size={15} />正在读取引用内容</div>}

@@ -1,7 +1,7 @@
 .material-unit-workspace { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0,1fr); overflow: hidden; background: #f4f7fb; }
 
 /* Desktop teaching workspace: prioritize readable source, scope, and outline columns. */
-.material-unit-layout { min-width: 1240px !important;  min-height: calc(100dvh - 220px) !important; }
+.material-unit-layout { min-width: 0; min-height: calc(100dvh - 220px); }
 /* M5: 展开式布局 —— 三列太挤, 压窄单元列, 大纲列可独立滚动 */
 .material-unit-layout {  }
 .unit-list-item strong { font-size: 14px !important; }
@@ -20,14 +20,12 @@
 .material-unit-toolbar button:hover, .outline-tools button:hover { border-color: #9fc2ed; background: #f1f7ff; }
 .material-unit-message { min-height: 38px; padding: 7px 14px; display: flex; align-items: center; gap: 7px; color: #176b4d; border-bottom: 1px solid #cceadd; background: #eefaf5; font-size: 13px; }.material-unit-message.is-error { color: #9e352c; border-color: #efc7c1; background: #fff2f0; }.material-unit-message span { flex: 1; }.material-unit-message button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; color: inherit; background: transparent; }
 .material-unit-layout { min-width: 1180px; min-height: 0; display: flex; overflow: hidden; }
-/* 三列可拖动: 分隔条(绝对定位在列边界, 不占 grid 列) */
-.mu-split { flex: 0 0 8px; cursor: col-resize; background: transparent; position: relative; }
+/* Splitters occupy the gap between columns and follow their actual widths. */
+.mu-split { flex: 0 0 8px; cursor: col-resize; background: transparent; position: relative; touch-action: none; user-select: none; }
 .mu-split::before { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: #c3d0e0; opacity: .8; transition: opacity .15s; }
 .mu-split:hover::before, .mu-split.is-dragging::before { opacity: 1; background: #246dde; }
 .mu-split:hover::after { content: ''; position: absolute; inset: 0 3px; background: rgba(36,109,222,.08); }
 .mu-split.is-dragging { background: rgba(36,109,222,.12); }
-.mu-split[data-split="0"] { left: 250px; }
-.mu-split[data-split="1"] { left: calc(250px + var(--muw-main, 1fr)); }
 .unit-sidebar { flex: 0 0 var(--muw-side,260px); min-width: 200px; max-width: 450px; min-height: 0; background:#fff; }
 .outline-panel { flex: 0 0 var(--muw-outline,420px); min-width: 320px; max-width: 640px; min-height: 0; background:#fff; }
 .scope-workbench { flex: 1 1 auto; min-width: 480px; min-height: 0; }.unit-sidebar { display: grid; grid-template-rows: 42px minmax(130px,.8fr) auto minmax(180px,1.2fr); border-right: 1px solid #d8e3ee; }.unit-sidebar > header, .unit-sources > header { padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e9f0; }.unit-sidebar > header strong, .unit-sources > header strong { font-size: 13px; }.unit-sidebar > header span, .unit-sources > header span { min-width: 24px; padding: 2px 6px; border-radius: 10px; color: #1857b7; background: #eaf3ff; text-align: center; font-size: 12px; }
@@ -37,7 +35,14 @@
 /* O1: 当前资料文件名允许换行, 宽度占满, 长名不再截断 */
 .unit-sources > button strong, .file-reference strong { white-space: normal; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
 .unit-sources > button, .file-reference { min-height: 58px; max-height: 76px; align-items: start; padding-top: 8px; }
-.unit-sources > button strong, .unit-sources > button small, .file-reference strong, .file-reference small { max-width: 100%; }.unit-sources > button strong, .file-reference strong { font-size: 12px; }.unit-sources > button small, .file-reference small { color: #718399; font-size: 11px; }.unit-sources > button { overflow: hidden; }.unit-sources > button:nth-of-type(n) { flex: none; }.unit-sources { overflow-y: auto; }.file-reference { grid-template-columns: 18px minmax(0,1fr) 28px; background: #f8fbff; }.file-reference > button { width: 27px; height: 27px; display: grid; place-items: center; border: 0; color: #65788f; background: transparent; }
+.unit-sources > button strong, .unit-sources > button small, .file-reference strong, .file-reference small { max-width: 100%; }.unit-sources > button strong, .file-reference strong { font-size: 12px; }.unit-sources > button small, .file-reference small { color: #718399; font-size: 11px; }.unit-sources > button { overflow: hidden; }.unit-sources > button:nth-of-type(n) { flex: none; }.unit-sources { overflow-y: auto; }
+/* 当前资料列表的纵向滚动条在窄视口下会紧贴长文件名, 视觉上像一条乱入的竖线。
+   减淡滑块并隐藏轨道, 只保留可点击的细微滚动指示。 */
+.unit-sources::-webkit-scrollbar { width: 6px; }
+.unit-sources::-webkit-scrollbar-track { background: transparent; }
+.unit-sources::-webkit-scrollbar-thumb { background: rgba(100,120,145,.28); border-radius: 999px; }
+.unit-sources::-webkit-scrollbar-thumb:hover { background: rgba(100,120,145,.45); }
+.unit-sources { scrollbar-width: thin; scrollbar-color: rgba(100,120,145,.28) transparent; }.file-reference { grid-template-columns: 18px minmax(0,1fr) 28px; background: #f8fbff; }.file-reference > button { width: 27px; height: 27px; display: grid; place-items: center; border: 0; color: #65788f; background: transparent; }
 .scope-workbench { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(68px,auto); overflow: auto; background: #f7f9fc; }.planning-step { margin: 12px 14px 0; border: 1px solid #dce5ee; border-radius: 7px; background: #fff; opacity: .58; }.planning-step.is-open { opacity: 1; }.planning-step > header { min-height: 58px; padding: 9px 12px; display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 9px; border-bottom: 1px solid #e5ebf1; }.planning-step > header > span { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #246dde; font-size: 13px; font-weight: 700; }.planning-step > header > div { display: grid; gap: 3px; }.planning-step > header strong { color: #26384f; font-size: 14px; }.planning-step > header small { color: #718399; font-size: 12px; }.planning-step > header em { color: #1857b7; font-size: 12px; font-style: normal; }
 .matching-status, .matching-error { margin: 8px 14px 0; min-height: 38px; padding: 7px 10px; display: flex; align-items: center; gap: 7px; border: 1px solid #bfd8f5; border-radius: 7px; color: #285e9d; background: #f4f9ff; font-size: 12px; }
 .matching-status span, .matching-error span { flex: 1; }
@@ -317,7 +322,7 @@
 .import-session-warning svg { flex: none; margin-top: 1px; }
 .import-session-ok { border-color: #bfe8cf; color: #176b4d; background: #eefaf5; align-items: center; }
 
-@media (max-width: 1100px) {
+@media (max-width: 1240px) {
   .material-unit-layout { min-width: 0 !important; width: 100%; height: auto; min-height: 0; flex-direction: column; overflow: auto; }
   .material-unit-layout > .mu-split { display: none; }
   .unit-sidebar, .scope-workbench, .outline-panel { width: 100%; min-width: 0; max-width: none; flex: none; }
@@ -424,3 +429,82 @@
   outline: 2px solid #246dde;
   outline-offset: 2px;
 }
+
+/* ── 大纲要求 / 教材范围 的可选条目 ────────────────────────────────
+   这两个列表此前没有任何布局规则，label 与 strong/small 都是 display:inline，
+   标题紧随复选框、正文整段 180+ 字横铺，无法分辨"一条从哪里开始、到哪里结束"。
+   改为标准行：复选框 + 单栏内容，标题一行、摘要两行、元信息一行。 */
+.alignment-content .requirement-group > label,
+.textbook-tree > label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  margin: 0 0 6px;
+  padding: 9px 10px;
+  border: 1px solid #e2e9f1;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .14s ease, background-color .14s ease;
+}
+.alignment-content .requirement-group > label:hover,
+.textbook-tree > label:hover { border-color: #bcd7fb; background: #f7fbff; }
+.alignment-content .requirement-group > label.selected,
+.textbook-tree > label.selected { border-color: #7fb0ee; background: #eef6ff; }
+.alignment-content .requirement-group > label > input,
+.textbook-tree > label > input { margin-top: 2px; accent-color: #246dde; }
+.alignment-content .requirement-group > label > span,
+.textbook-tree > label > span { display: grid; gap: 3px; min-width: 0; }
+.alignment-content .requirement-group strong,
+.textbook-tree strong { display: block; color: #26384f; font-weight: 700; }
+.alignment-content .requirement-group small,
+.textbook-tree small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #52677f;
+  overflow-wrap: anywhere;
+}
+.alignment-content .requirement-group label.is-expanded small,
+.textbook-tree label.is-expanded small { -webkit-line-clamp: unset; }
+.alignment-content .requirement-group em { display: block; color: #718399; font-style: normal; }
+.textbook-tree .graph-badge { color: #1857b7; font-weight: 700; }
+
+/* 折叠/展开：长正文默认两行，教师可自行决定是否展开，而不是被整段淹没 */
+.row-expand {
+  justify-self: start;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border: 1px solid #cfdcea;
+  border-radius: 4px;
+  color: #2f6bb0;
+  background: #f5f9ff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.row-expand:hover { border-color: #9fc2ed; background: #eaf3ff; }
+
+/* 一/二/三级标题缩进：让教材层级一眼可辨 */
+.textbook-tree > label.level-2 { margin-left: 16px; }
+.textbook-tree > label.level-3 { margin-left: 32px; }
+.textbook-tree > label.level-2 > span > strong::before { content: "└ "; color: #9fb3c8; }
+.textbook-tree > label.level-3 > span > strong::before { content: "└└ "; color: #c0cddb; }
+
+/* 复选框放大到易点区域；图谱徽标独立成行，不与教材正文抢注意力 */
+.alignment-content .requirement-group > label > input,
+.textbook-tree > label > input { width: 16px; height: 16px; }
+.textbook-tree .graph-badge {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin-top: 2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #eef6ff;
+  -webkit-line-clamp: unset;
+  font-weight: 700;
+}
+.textbook-tree .graph-badge svg { flex: none; }

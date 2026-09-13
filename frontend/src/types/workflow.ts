@@ -10,6 +10,7 @@ export type TeachingDepth = 'overview' | 'standard' | 'deep';
 export interface TeachingScope {
   selected_point_titles: string[];
   estimated_minutes: number;
+  ppt_slide_count?: number;
   depth: TeachingDepth;
 }
 
@@ -161,6 +162,7 @@ export interface TeachingMessage {
 export type TeachingPhase = 'design' | 'teach_knowledge' | 'student_question' | 'teacher_answer' | 'supervisor_comment' | 'iteration_complete';
 
 export interface TeachingData {
+  workflow_version?: 'teaching_v1' | 'classroom_v2';
   archive_id?: string;
   design_id?: string;
   document_id?: string;
@@ -232,6 +234,218 @@ export interface RunEvent {
   created_at: string;
 }
 
+/** classroom_v2 domain contracts used by the classroom workbench. */
+export interface PptContent {
+  title?: string;
+  subtitle?: string;
+  bullets?: string[];
+  examples?: string[];
+  code_blocks?: Array<Record<string, unknown>>;
+  visual_instruction?: string;
+}
+export interface SpeakerNoteBlock {
+  block_id: string;
+  order?: number;
+  block_order?: number;
+  block_type?: string;
+  content: string;
+  estimated_seconds?: number;
+  knowledge_point_ids?: string[];
+}
+export interface LessonSlide {
+  slide_id: string;
+  order: number;
+  title: string;
+  purpose?: string;
+  learning_objectives?: string[];
+  knowledge_points?: string[];
+  estimated_minutes?: number;
+  ppt_content?: PptContent;
+  speaker_notes?: SpeakerNoteBlock[];
+  interaction_anchors?: Array<Record<string, unknown>>;
+  expected_misconceptions?: Array<Record<string, unknown>>;
+}
+export interface LessonVersion {
+  id: string;
+  lesson_id: string;
+  run_id: string;
+  version_number: number;
+  source_version_id?: string | null;
+  created_from_round_id?: string | null;
+  title: string;
+  learning_objectives?: string[];
+  knowledge_points?: string[];
+  estimated_minutes?: number;
+  slides: LessonSlide[];
+  status?: string;
+  created_at: string;
+  updated_at?: string;
+}
+export interface LessonReviewMessage {
+  message_id: string;
+  run_id: string;
+  version_id: string;
+  slide_id?: string | null;
+  role: 'user' | 'teacher' | 'system';
+  content: string;
+  created_at: string;
+}
+export interface SimulationRound {
+  id: string;
+  run_id: string;
+  round_number: number;
+  lesson_version_id: string;
+  scenario_seed: string;
+  status: 'queued' | 'initializing' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped' | string;
+  current_slide_id?: string | null;
+  current_slide_index?: number;
+  virtual_elapsed_seconds?: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+export interface ClassroomState {
+  run_id: string;
+  round_id: string;
+  phase: string;
+  current_slide_id?: string | null;
+  current_slide_index?: number;
+  current_block_id?: string | null;
+  active_agent_id?: string | null;
+  turn_count?: number;
+  followup_depth?: number;
+  slide_interaction_count?: number;
+  student_question_count?: number;
+  virtual_elapsed_seconds?: number;
+  status: 'active' | 'paused' | 'completed' | 'stopped' | 'failed' | string;
+  version?: number;
+  updated_at?: string;
+}
+export interface ClassroomEvent {
+  event_id: string;
+  run_id: string;
+  round_id: string;
+  slide_id?: string | null;
+  sequence: number;
+  actor_id: string;
+  actor_role: 'teacher' | 'student' | 'supervisor' | 'system' | 'user' | string;
+  event_type: string;
+  content: string;
+  reply_to?: string | null;
+  target_agent_id?: string | null;
+  metadata?: Record<string, unknown>;
+  virtual_timestamp?: number;
+  created_at: string;
+}
+export interface TeacherDirective {
+  directive_id: string;
+  run_id: string;
+  round_id: string;
+  slide_id?: string | null;
+  source_event_id: string;
+  content: string;
+  intent: 'question' | 'correct' | 'require';
+  scope: 'slide' | 'round' | 'lesson';
+  status: 'active' | 'resolved' | 'superseded' | 'cancelled';
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export interface StudentPersona {
+  id: string;
+  run_id: string;
+  student_id: string;
+  name: string;
+  level: 'high' | 'medium' | 'low';
+  ability: number;
+  prior_knowledge?: Record<string, unknown>;
+  engagement: number;
+  confidence: number;
+  verbosity: number;
+  question_propensity: number;
+  answer_propensity: number;
+  misconception_profile?: Record<string, unknown>;
+  scenario_seed: string;
+  created_at: string;
+}
+export interface StudentCognitiveState {
+  id: string;
+  round_id: string;
+  student_id: string;
+  knowledge_point_id: string;
+  current_mastery: number;
+  current_confidence: number;
+  misconceptions: string[];
+  resolved_misconceptions: string[];
+  engagement_runtime: number;
+  last_event_id?: string | null;
+  updated_at: string;
+}
+export interface ClassroomSnapshot {
+  run_id: string;
+  round: SimulationRound;
+  lesson_version: LessonVersion | null;
+  state: ClassroomState | null;
+  events: ClassroomEvent[];
+  student_personas: StudentPersona[];
+  student_cognitive_states: StudentCognitiveState[];
+  last_sequence: number;
+}
+export interface SupervisorObservation {
+  observation_id: string;
+  round_id: string;
+  slide_id: string;
+  event_ids: string[];
+  category: string;
+  severity: string;
+  issue: string;
+  evidence: string;
+  recommendation: string;
+  analysis?: Record<string, string>;
+  created_at?: string;
+}
+
+export interface SupervisorProfile {
+  run_id: string;
+  agent_key: 'supervisor';
+  role_definition: string;
+  system_prompt: string;
+  evaluation_focus: string[];
+  persisted?: boolean;
+  updated_at?: string | null;
+}
+export interface SupervisorReport {
+  id: string;
+  run_id: string;
+  round_id: string;
+  overall_score: number;
+  dimension_scores: Record<string, number>;
+  strengths: string[];
+  critical_issues: string[];
+  observations: string[];
+  revision_priorities: string[];
+  created_at?: string;
+}
+export interface RevisionPatch {
+  patch_id: string;
+  run_id: string;
+  source_version_id: string;
+  target_version_id?: string | null;
+  source_round_id?: string | null;
+  target_type: string;
+  slide_id: string;
+  block_id?: string | null;
+  field_path: string;
+  before: unknown;
+  after: unknown;
+  reason: string;
+  source_observation_ids: string[];
+  /** 教师课堂介入产生的补丁: 指向 TeacherDirective, 复盘页可溯源 */
+  source_intervention_ids?: string[];
+  status: string;
+  created_at?: string;
+  applied_at?: string | null;
+}
+
 export interface ParsedDocument {
   document_id: string;
   file_name: string;
@@ -258,6 +472,7 @@ export interface CreateRunInput {
   max_iterations: number;
   context: string;
   template_id: 'teaching_design';
+  workflow_version?: 'teaching_v1' | 'classroom_v2';
   interventions: InterventionPoint;
   scope: TeachingScope;
 }
@@ -441,7 +656,11 @@ export interface CourseDesignContent {
   postscript: string;
 }
 
-export type CourseDesignAssemblySourceKind = 'schedule' | 'syllabus' | 'knowledge_outline' | 'teacher_message' | 'teacher_draft' | 'ideological' | 'custom';
+export type CourseDesignAssemblySourceKind =
+  | 'schedule' | 'syllabus' | 'knowledge_outline' | 'teacher_message' | 'teacher_draft'
+  | 'ideological' | 'custom'
+  // 课堂演练产物：逐页讲稿与督导评价
+  | 'lesson_slide' | 'supervisor_report';
 export type CourseDesignAssemblyTarget = 'session_label' | 'objectives' | 'knowledge_points' | 'key_points' | 'difficult_points' | 'methods' | 'tools' | 'ideological_elements' | 'teaching_process' | 'assessment' | 'postscript';
 
 export interface CourseDesignAssemblySource {
@@ -518,6 +737,8 @@ export interface CourseDesignTemplateInspection {
   compatible: boolean;
   matched_fields: string[];
   unmatched_fields: string[];
+  /** 导出前提醒: 这些字段还是空白, Word 里会写成「待教师完善」 */
+  pending_fields?: string[];
   replacement_count: number;
   paragraph_count: number;
   table_count: number;
@@ -722,6 +943,39 @@ export interface CompositionSummary {
   version: number;
   block_count: number;
   updated_at: string;
+}
+
+export type ResultType = 'lesson_plan' | 'courseware' | 'research' | 'package';
+
+export interface ResultArtifact {
+  id: string;
+  result_type: ResultType;
+  title: string;
+  detail: string;
+  archive_id?: string | null;
+  design_id?: string | null;
+  run_id?: string | null;
+  confirmed: boolean;
+  exported: boolean;
+  export_count: number;
+  updated_at: string;
+  count: number;
+}
+
+export interface ResultSummaryRow {
+  result_type: ResultType;
+  label: string;
+  count: number;
+  detail: string;
+}
+
+export interface ResultList {
+  designs: ResultArtifact[];
+  courseware: ResultArtifact[];
+  research: ResultArtifact[];
+  packages: ResultArtifact[];
+  summary: { rows: ResultSummaryRow[]; total: number };
+  warnings: string[];
 }
 
 export interface MaterialUnitFileAnalysis {

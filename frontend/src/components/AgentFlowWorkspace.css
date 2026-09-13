@@ -11,7 +11,7 @@
 .afw-progress-pill.wait{color:#d97706;background:#fdf3e3}
 .afw-progress-pct{font-size:11px;color:#64748b;font-family:monospace}
 
-.afw-body{flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:200px minmax(0,1fr) 320px;gap:12px}
+.afw-body{flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:180px minmax(520px,1fr) 420px;gap:12px}
 /* 左: 名册 */
 .afw-roster{display:flex;flex-direction:column;gap:6px;min-height:0}
 .afw-roster-head{font-size:12px;font-weight:700;color:#1e293b;display:flex;justify-content:space-between;align-items:center}
@@ -31,7 +31,7 @@
 .afw-roster-foot{font-size:10px;color:#94a3b8;text-align:center;padding-top:4px}
 
 /* 中: 流程图 — 画布内含 1180x520 逻辑画布, 默认缩放到容器 */
-.afw-canvas-wrap{position:relative;height:330px;align-self:start;border:1px solid #e3e8f0;border-radius:12px;background:#fbfcfe;min-height:0;overflow:hidden}
+.afw-canvas-wrap{position:relative;height:300px;align-self:start;border:1px solid #e3e8f0;border-radius:12px;background:#fbfcfe;min-height:0;overflow:hidden}
 .afw-canvas{position:relative;width:560px;height:330px;transform-origin:0 0;transition:transform .25s ease}
 .afw-canvas.scale-fit{transform:scale(1)}
 .afw-edges{position:absolute;inset:0;width:560px;height:330px;pointer-events:none}
@@ -81,7 +81,11 @@
 .afw-legend .lg-line2{background:repeating-linear-gradient(90deg,#a78bfa 0 4px,transparent 4px 7px)}
 
 /* 右: 详情 */
-.afw-detail{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;border:1px solid #e3e8f0;border-radius:12px;background:#fff;padding:11px}
+.afw-detail{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;border:1px solid #e3e8f0;border-radius:12px;background:#fff;padding:11px;grid-column:3;grid-row:1 / span 2}
+.afw-activity{grid-column:2;grid-row:2;min-height:150px;display:flex;flex-direction:column;border:1px solid #e3e8f0;border-radius:12px;background:#fff;overflow:hidden}
+.afw-activity-head{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid #eef2f7;color:#334155;font-size:11px;font-weight:700}
+.afw-activity-head span{display:inline-flex;align-items:center;gap:5px}.afw-activity-head svg{color:#1468e8}.afw-activity-head small{color:#94a3b8;font-size:10px;font-weight:500}
+.afw-activity-list{min-height:0;overflow:auto;padding:6px 10px}.afw-activity-row{display:grid;grid-template-columns:38px minmax(0,1fr);gap:8px;padding:7px 2px;border-bottom:1px solid #f1f5f9}.afw-activity-row:last-child{border-bottom:0}.afw-seq{color:#94a3b8;font:10px monospace}.afw-activity-row div{min-width:0}.afw-activity-row b{color:#2563eb;font-size:10.5px;margin-right:7px}.afw-activity-row span{color:#94a3b8;font-size:10px}.afw-activity-row p{margin:3px 0 0;color:#475569;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.afw-activity-empty{padding:16px;color:#94a3b8;text-align:center;font-size:10.5px}
 .afw-detail-head{display:flex;align-items:center;gap:8px}
 .afw-detail-ico{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;color:#fff;flex:none}
 .afw-detail-t{flex:1;min-width:0;display:grid;gap:1px}
@@ -125,7 +129,7 @@
 .afw-msg.from-student .afw-msg-body p{background:#e9f7ee;border:1px solid #d5eedd;border-radius:9px;border-top-right-radius:2px;color:#1f5c39}
 
 @media (max-width: 1350px){
-  .afw-body{grid-template-columns:170px minmax(0,1fr) 280px}
+  .afw-body{grid-template-columns:170px minmax(440px,1fr) 360px}
   .afw-canvas.scale-fit{transform:scale(.8);transform-origin:0 0;margin-bottom:-66px}
 }
 
@@ -159,6 +163,7 @@
   .afw-mobile-step.state-running .afw-mobile-status{color:#1468e8}
   .afw-mobile-step.state-waiting .afw-mobile-status{color:#94a3b8}
   .afw-detail{grid-area:detail;max-height:none}
+  .afw-activity{grid-column:auto;grid-row:auto}
 }
 
 @media (max-width: 560px){

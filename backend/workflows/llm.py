@@ -19,6 +19,8 @@ class ModelClient:
         base_url = settings.base_url if runtime else settings.llm_base_url
         temperature = settings.temperature if runtime else settings.llm_temperature
         timeout = settings.timeout_seconds if runtime else settings.llm_timeout_seconds
+        # 面板的「超时」是给模型服务用的; dsh 桥的单次请求超时要留足余量(45 页蓝图实测 >5 分钟)
+        self._request_timeout = max(float(timeout or 0.0), 300.0)
         self.model_name = model_name if self.provider != "mock" else "deterministic-mock"
         self._metrics_trace: ContextVar[list[dict[str, Any]] | None] = ContextVar(
             f"model_metrics_{id(self)}", default=None
@@ -49,7 +51,12 @@ class ModelClient:
         调用方负责在模型变化时处理旧引擎生命周期。"""
         want = self.model_name or "deepseek-v4-flash"
         if self._engine is None or getattr(self._engine, "default_model", "") != want:
-            self._engine = DshAgentEngine(default_model=want, api_key=self._dsh_api_key or None, base_url=self._dsh_base_url or None)
+            self._engine = DshAgentEngine(
+                default_model=want,
+                api_key=self._dsh_api_key or None,
+                base_url=self._dsh_base_url or None,
+                request_timeout=self._request_timeout,
+            )
         return self._engine
 
     def begin_metrics_trace(self) -> Token:
